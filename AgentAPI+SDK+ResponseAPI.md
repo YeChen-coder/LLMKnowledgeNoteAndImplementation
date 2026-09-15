@@ -1,3 +1,4 @@
+Notes of https://developers.openai.com/api/docs/guides/agents
 
 # Agent SDK make application hold deterministic rule over Agent API which runtime is charged by OpenAI
 
