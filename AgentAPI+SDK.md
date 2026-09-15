@@ -34,7 +34,7 @@ Then four days ago, on September 10, 2026, OpenAI formally published the Agent A
 
 Looking at the past, when the Agent API was not even a choice, people only had the Agent SDK. There was no argument about whether people should use a managed service by OpenAI. The answer was simple: in the past, there was no such choice. People only had the Agent SDK to use if they wanted to add an agent to their application. (Perhaps this is the true reason, instead of the determistic rule.)
 
-# Response API is an advanced version (+reasoning + tool calling + MCP + x + x ....) of chat competition API
+# Response API is an advanced version (+reasoning + tool calling + MCP + x + x ....) of chat competition API; chatkit is the UI (user->chatkit->agent/workflow)
 
 To start with, the chat completion API is the one that we used when ChatGPT models were first published. It is the very old, traditional, and simple one: you just send a message, the large language model responds, and that is one turn. If you want multi-turn, you make combinations of the input and send them back to the large language model. Even though I still find that multi-turn code needs a bit of analysis, the truth is that it is very old right now, standing at this point in time.
 
