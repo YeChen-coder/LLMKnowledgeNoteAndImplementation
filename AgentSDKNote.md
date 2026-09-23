@@ -40,14 +40,22 @@ def history_fun_fact() -> str:
     return "Sharks are older than trees."
 
 ## Agent orchestration 
-hands off 它和 agents as tools 这两个是同等价位的关系。当然也可以组合使用：
+hands off 它和 agents as tools 这两个是同等价位的关系。当然也可以组合使用：首先由一个 triage agent 接收，把所有的 task 都 hand off 给一个 specialist，然后这个 specialist 再去 call 一群小 agent，用 agents as tools 来处理。
 
-首先由一个 triage agent 接收，把所有的 task 都 hand off 给一个 specialist，然后这个 specialist 再去 call 一群小 agent，用 agents as tools 来处理
+hands off 它是全给了，就是由下一任 take full ownership。而 agents as tools 仍然是有一个大领班从头到尾去负责，agent 只是在中间处理某些小事，交由它去办。
 
-但是 hands off 它是全给了，就是由下一任 take full ownership。而 agents as tools 仍然是有一个大领班从头到尾去负责，agent 只是在中间处理某些小事，交由它去办。
+此外，还有更容易想到的方案：
 
-所以这是它们的一个区别.
+如果非不乐意用 handoff，或者代码、应用程序确实有特殊情况，那就直接用代码写：
 
+• 一种是走 structured output：上一个返回这个的 large model，只要返回了 structured output，就能从 JSON 里面解析出 parameter 或者其他东西，你别管具体是什么，反正肯定能搞出来。
+
+• 另一种对于很简单的情况：流程就是 1234567 必须顺着走的，那就一个一个来顺着走，Python 代码从上往下执行就行了。
+
+既然都谈到这儿了，那普通的 while loop 什么的都能干。
+
+然后有的时候可能要搞并发，很多 Agent 都要同时跑， 用asyncio.gather 收结果。你别管是因为什么，反正等到具体的应用场景里自然就会用得上，都可以，就是单纯的一个代码逻辑设计，其实跟 Agent SDK 没有什么太大关系，把它当成一个通用的函数去理解就行了。
+ 
 ### handoff
 
 先谈 handoff。因为它的 sub-agent 都是一个并行的关系，但在你分给 sub-agent 之前，总得有人来分发，所以这边引入了一个 triage agent。
