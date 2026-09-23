@@ -1,5 +1,6 @@
 https://learn.microsoft.com/en-us/agent-framework/get-started/workflows?pivots=programming-language-python
 
+# Workflow, executors and edges
 Define workflow steps (executors) and connect them with edges:
 
 Python
@@ -63,10 +64,10 @@ print(f"Final state: {events.get_final_state()}")
 from agent_framework import create_harness_agent
 from agent_framework.openai import OpenAIChatClient //agent_framework 是 Microsoft 的 Agent Framework，不是 OpenAI 的 SDK。 这里的 OpenAIChatClient 只是 Microsoft Agent Framework 提供的一个“连接 OpenAI 模型的客户端适配器”。
 
-agent = create_harness_agent(
+**agent = create_harness_agent(
     OpenAIChatClient(model="gpt-4o"),
 )
-
+** //就是这边直接在 agent platform 的 OpenAI provider（尤其是 OpenAI Chat Client）里把事情都包圆了，所有的 harness 其实都在里面，意思就是不用自己写了
 // A session carries the harness state (plan, todos, history) across turns.
 session = agent.create_session()
 
