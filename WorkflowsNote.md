@@ -3,7 +3,8 @@ https://learn.microsoft.com/en-us/agent-framework/get-started/workflows?pivots=p
 Define workflow steps (executors) and connect them with edges:
 
 Python
-# Step 1: A class-based executor that converts text to uppercase
+ Step 1: A class-based executor that converts text to uppercase
+ 
 class UpperCase(Executor): //我要创建一个叫 UpperCase 的东西，而且它属于 Executor 这一类工作步骤。注意，这个括号是类的继承，所以这里UpperCase也是一个executor
     def __init__(self, id: str): //创建这个对象的时候，自动运行这里
         super().__init__(id=id) //反正意思就是，创建的时候需要给它一个 string 类型的数据作为它的 ID; 哦，以及这个 super 是因为刚才说的，它是继承的，所以得去找它的“爸爸”，也就是 Executor 这个类，然后用 Executor 里面的这个 initiate 给它拿过来用，即调用 Executor 原本的初始化功能，并且把这个 id 给它。
@@ -14,7 +15,8 @@ class UpperCase(Executor): //我要创建一个叫 UpperCase 的东西，而且�
         await **ctx**.send_message**(text.upper()) //好，一点点说。那个 text.upper()，这个是 Python 自带的，就是把小写都改成大写，就这么一个意思； ctx.send_message(...) 这个意思是：把这个结果发送给 workflow 的下一步 executor
 //总之就是这么一整个 uppercase 的类，它所做的事情就是收到文字，然后转大写，再发送给下一步。虽然说它是个类，但因为这边用了 handler 装饰器，所以当它创建的时候，自然就会运行 to_upper_case 这么一个函数。然后它会顺手告诉这个 workflow 自己已经干完了，再交给下一步的 executor。
 
-# Step 2: A function-based executor that reverses the string and yields output
+ Step 2: A function-based executor that reverses the string and yields output
+ 
 @executor(id="reverse_text") //每一个步骤都叫一个 executor， @executor指的是把下面这个普通 Python 函数直接变成一个 Workflow executor。两种写法都行。上一个写法是用一个 class 当一个 executor，然后这边就直接拿一个 function 当 executor。怎么写都行，无所谓的。以及顺手说，这个 executor 的 ID 就是 reverse_text
 async def reverse_text(text: str, ctx: WorkflowContext[Never, str]) -> None:
 // ctx: WorkflowContext[Never, str], Never = 不会继续发送给下一个 executor,因为这里就是最后一步了，它没有别的步骤了, str   = 最终输出是字符串
@@ -53,3 +55,29 @@ workflow finished
 框架把整个运行过程中发生的东西收集起来。
 print(f"Output: {events.get_outputs()}")
 print(f"Final state: {events.get_final_state()}")
+
+---
+
+# harness in Microsoft Agent Framework
+
+from agent_framework import create_harness_agent
+from agent_framework.openai import OpenAIChatClient //agent_framework 是 Microsoft 的 Agent Framework，不是 OpenAI 的 SDK。 这里的 OpenAIChatClient 只是 Microsoft Agent Framework 提供的一个“连接 OpenAI 模型的客户端适配器”。
+
+agent = create_harness_agent(
+    OpenAIChatClient(model="gpt-4o"),
+)
+
+// A session carries the harness state (plan, todos, history) across turns.
+session = agent.create_session()
+
+print("Harness agent ready. Type 'exit' to quit.")
+while True:
+    user_input = input("> ") //input() 是 Python 自带的函数，作用是：在终端里等用户输入文字。>是提示文字。
+    if user_input.strip().lower() in {"exit", "quit"}:
+        break
+
+    # Stream this turn's output as the harness plans and works through the request.
+    async for chunk in agent.run(user_input, session=session, stream=True): //agent.run(...) 意思就是：让这个 Agent 处理一次用户输入。这里session是刚才session = agent.create_session() 创建的这个session，自带连续性的。 stream=True它的意思是：不要等 Agent 全部生成完以后一次性给我结果，而是边生成边给我。这是一个异步的数据流；每当有新的一块数据出来，就拿一chunk
+        if chunk.text: //有些 chunk 不一定包含文字。它可能代表别的事件，比如状态变化、tool call、metadata 等。if chunk.text: 意思就是：如果这一小块里面真的有文字，那我才打印。
+            print(chunk.text, end="", flush=True) //end=""意思是：打印完以后不要换行; flush=True “我刚打印的这一小块，马上显示到屏幕上，不要先攒着。” 有时候程序为了效率，会把输出先放到 buffer 里，等攒多一点再显示。但 streaming 最怕这个。
+    print() // 最后这个是在 item for 解释之后运行的。因为前面它一直都没有换行，end""就是里面是空的，所以放这么一句的目的是让它换个行
