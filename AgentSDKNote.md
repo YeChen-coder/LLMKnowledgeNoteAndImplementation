@@ -39,7 +39,10 @@ def history_fun_fact() -> str:
     """Return a short history fact."""
     return "Sharks are older than trees."
 
-hands off 它和 agents as tools 这两个是同等价位的关系。
+## Agent orchestration 
+hands off 它和 agents as tools 这两个是同等价位的关系。当然也可以组合使用：
+
+首先由一个 triage agent 接收，把所有的 task 都 hand off 给一个 specialist，然后这个 specialist 再去 call 一群小 agent，用 agents as tools 来处理
 
 但是 hands off 它是全给了，就是由下一任 take full ownership。而 agents as tools 仍然是有一个大领班从头到尾去负责，agent 只是在中间处理某些小事，交由它去办。
 
@@ -90,3 +93,6 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+
