@@ -197,6 +197,17 @@ async def main():
         )
         print(f"Story: {story_result.final_output}")
 
-
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+
+# parallelization
+
+https://github.com/openai/openai-agents-python/blob/main/examples/agent_patterns/parallelization.py?utm_source=chatgpt.com
+
+多个 Agent 不互相依赖 → 同时运行 → 等全部完成 → 聚合结果
+
+也就是 Parallel / Fan-out / Fan-in。
+
+OpenAI 官方的 agent_patterns README 也把它列为一个独立常见模式：多个 agent 可以并行运行，既可以降低 latency，也可以同时生成多个候选结果再挑一个。官方 orchestration 文档明确用 asyncio.gather 作为 code-driven parallel orchestration 的例子。
