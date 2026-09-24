@@ -206,8 +206,28 @@ if __name__ == "__main__":
 
 https://github.com/openai/openai-agents-python/blob/main/examples/agent_patterns/parallelization.py?utm_source=chatgpt.com
 
+  res_1, res_2, res_3 = await asyncio.gather( //gather 会等 A、B、C 全部完成 → 然后一次性返回所有结果
+            Runner.run(
+                spanish_agent,
+                msg,
+            ),
+            Runner.run(
+                spanish_agent,
+                msg,
+            ),
+            Runner.run(
+                spanish_agent,
+                msg,
+            ),
+        )
+
+        
+//这边就是这三种。它们都是同一个 agent，但是开了三个 session，输出了三个 output。最后再用一个 translation picker 去挑一个好的，也就是跑另外一个 agent 的一个 session 再筛选一次。就这么简单，就这样。
 多个 Agent 不互相依赖 → 同时运行 → 等全部完成 → 聚合结果
 
 也就是 Parallel / Fan-out / Fan-in。
 
+Input → A + B + C = fan-out
+
+A + B + C → Results = fan-in
 OpenAI 官方的 agent_patterns README 也把它列为一个独立常见模式：多个 agent 可以并行运行，既可以降低 latency，也可以同时生成多个候选结果再挑一个。官方 orchestration 文档明确用 asyncio.gather 作为 code-driven parallel orchestration 的例子。
