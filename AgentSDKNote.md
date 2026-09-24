@@ -1,5 +1,7 @@
 Note of https://openai.github.io/openai-agents-python/quickstart/?utm_source=chatgpt.com
 
+# async 异步 + await 
+
 用 asyncio 启动一个异步的 main() 函数，在里面等待 Runner.run(...) 执行完成，然后打印最终结果。(async/await 的一个核心意义是：等待 I/O 的时候，可以把执行权让给其他异步任务。)
 import asyncio
 from agents import Agent, Runner
@@ -102,5 +104,99 @@ async def main():
 if __name__ == "__main__":
     asyncio.run(main())
 
+# a deterministic flow
+https://github.com/openai/openai-agents-python/blob/main/examples/agent_patterns/deterministic.py?utm_source=chatgpt.com
+
+这里面先定义了三个 agent：
+
+1. 第一个是写 outline
+2. 第二个是检查 outline
+3. 第三个是根据 outline 写这个 story
+
+定义 agent 这件事非常简单，非常的直截了当
+
+class OutlineCheckerOutput(BaseModel): //BaseModel来自 Pydantic。你目前可以非常粗暴地先记成：BaseModel = 一个专门用来描述和检查“结构化数据长什么样”的 Python 基类。这里意思是我现在定义一个结构化数据类型。
+    good_quality: bool
+    is_scifi: bool
 
 
+outline_checker_agent = Agent(
+    name="outline_checker_agent",
+    instructions="Read the given story outline, and judge the quality. Also, determine if it is a scifi story.",
+    output_type=OutlineCheckerOutput, //output_type=OutlineCheckerOutput 也是 SDK 正式支持的写法。官方文档明确说明：output_type 可以直接传一个 Pydantic BaseModel 类；传进去之后，Agent 会使用 structured outputs，而不是普通字符串输出。
+)
+
+这里：output_type=OutlineCheckerOutput
+
+不是说：“模型，给你一个 Python class，你自己研究研究这个 class 是什么意思。” 不是。
+
+Agents SDK 会读取这个 class。因为这是一个 Pydantic model，所以 SDK 可以把它转换成类似这样的 JSON Schema：
+
+{
+  "type": "object",
+  "properties": {
+    "good_quality": {
+      "type": "boolean"
+    },
+    "is_scifi": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "good_quality",
+    "is_scifi"
+  ]
+}
+
+意思就是最终答案必须是一个 object，里面必须有：good_quality → boolean + is_scifi → boolean。
+Agents SDK 的源码里确实就是这么干的：它用 Pydantic 的 TypeAdapter 从 output_type 生成 JSON Schema，并负责验证/解析模型返回的 JSON。
+
+主函数是：
+
+async def main():
+    input_prompt = input_with_fallback( // input_with_fallback 它只是这个 example 自己写的辅助函数。询问用户输入 → 如果用户真的输入了内容，就用用户输入 → 如果用户没输入，就用默认内容
+        "What kind of story do you want? ",
+        "Write a short sci-fi story.",
+    )
+
+    // Ensure the entire workflow is a single trace
+    with trace("Deterministic story flow"): // with 在某个特殊的“环境”里面运行下面这一整块代码。eg 进入 something 管理的环境 → 执行 A → 执行 B → 执行 C → 离开这个环境; 这里意思就是：从这里开始，把下面这整个流程记录成一个叫 "Deterministic story flow" 的 trace。你可以把 trace 暂时理解成：一次 Agent workflow 的运行记录。        # 1. Generate an outline
+        **outline_result** = await Runner.run(
+            story_outline_agent,
+            input_prompt,
+        ) 
+        print("Outline generated")
+
+        // 2. Check the outline
+        outline_checker_result = await Runner.run(
+            outline_checker_agent,
+            **outline_result.final_output,** //因为上面Runner.run() 返回的不只是那段文字。它返回一个 result object。把第一个 Agent 生成的 outline，交给第二个 Agent 检查。
+        )
+
+        //outline_result = 整个 run 的结果对象； outline_result.final_output = Agent 最终输出
+
+        // 3. Add a gate to stop if the outline is not good quality or not a scifi story； 就是单纯的判断两个条件满不满足，不满足直接退，根本不会往story agent推
+        assert isinstance(outline_checker_result.final_output, OutlineCheckerOutput)
+        //is instance 意思就是：某个东西是不是某个 class 的实例？， 比如“hello” 是 str的instance ， 所以isinstance(x, str) 是true; 这里再问 outline_checker_result.final_output 是不是一个 OutlineCheckerOutput 对象，即做类型检查。 
+        //assert something 你可以先记成：我断言 something 必须是真的。
+        //总之 我现在确认一下：checker agent 的最终输出必须真的是 OutlineCheckerOutput 类型。如果不是，就说明出现了我们没预期到的情况，直接报错。
+        if not outline_checker_result.final_output.good_quality:
+            print("Outline is not good quality, so we stop here.")
+            exit(0)
+
+        if not outline_checker_result.final_output.is_scifi:
+            print("Outline is not a scifi story, so we stop here.")
+            exit(0)
+
+        print("Outline is good quality and a scifi story, so we continue to write the story.")
+
+        // 4. Write the story
+        story_result = await Runner.run(
+            story_agent,
+            outline_result.final_output,
+        )
+        print(f"Story: {story_result.final_output}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
