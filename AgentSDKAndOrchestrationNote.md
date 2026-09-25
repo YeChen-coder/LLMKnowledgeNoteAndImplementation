@@ -231,3 +231,137 @@ Input → A + B + C = fan-out
 
 A + B + C → Results = fan-in
 OpenAI 官方的 agent_patterns README 也把它列为一个独立常见模式：多个 agent 可以并行运行，既可以降低 latency，也可以同时生成多个候选结果再挑一个。官方 orchestration 文档明确用 asyncio.gather 作为 code-driven parallel orchestration 的例子。
+
+# LLM as a judge
+
+https://github.com/openai/openai-agents-python/blob/main/examples/agent_patterns/llm_as_a_judge.py
+
+排除掉 Python 语法的用法，其实都是非常简单的逻辑。
+
+核心就是让每一轮的 Evaluation Agent 输出一个 structural response，里面分两块：
+
+1. score
+2. 一个比较具体的评价
+
+只有当 score 是 pass 的时候，才会认定通过并继续往下走。这里其实没有下一个 story，只有 outline 和 evaluator。
+
+逻辑非常简单：限定一下最大轮数（max turn），while 循环不能无限进行下去，不然 token 受不了。限定之后，用代码做个简单的判断，来判定这个 while 循环是要继续还是 break 掉。
+
+除了里面用到的各种 Python 语法（对不起，是我菜），整个逻辑非常简单， 是个人就能想到的限定。
+
+from __future__ import annotations //这个是 Python 自己的东西，跟 Agent 没关系。你现在先记成：让 Python 在处理 type hint 的时候更灵活。
+
+例如后面这些：
+list[TResponseInputItem]
+str | None
+
+
+都属于 type hint。
+这行目前不影响你理解 Agent orchestration，知道它是 Python 类型标注相关设置就够了。
+
+import asyncio
+from dataclasses import dataclass //dataclass 可以先理解成：Python 帮你很方便地定义一个“主要负责装数据”的 class。
+from typing import Literal //Literal 是 Python type hint。后面会出现：Literal["pass", "needs_improvement", "fail"] 意思是：这个值只能是这三个字符串之一。不是随便什么 str 都可以。
+
+from agents import Agent, ItemHelpers, Runner, TResponseInputItem, trace
+from examples.auto_mode import input_with_fallback, is_auto_mode //input_with_fallback就是：用户有输入 → 用用户输入，用户没输入 → 用默认值；is_auto_mode() 你可以先理解成：这个 example 现在是不是运行在 OpenAI examples 自己的自动测试模式里。这不是 Agent orchestration 的核心概念。
+
+"""
+This example shows the LLM as a judge pattern. The first agent generates an outline for a story.
+The second agent judges the outline and provides feedback. We loop until the judge is satisfied
+with the outline.
+"""
+
+story_outline_generator = Agent(
+    name="story_outline_generator",
+    instructions=(
+        "You generate a very short story outline based on the user's input. "
+        "If there is any feedback provided, use it to improve the outline."
+    ),
+)
+
+
+@dataclass //decorator, 可以先理解成：把 EvaluationFeedback 这个 class 做成一个专门装数据的 class。 
+class EvaluationFeedback: // 
+    feedback: str // feedback 必须得是一个 string 的格式
+    score: Literal["pass", "needs_improvement", "fail"] //这刚才说过了，就是用了 literal。就是说，它这个 score，你不仅得是个 string，你还必须得是这三个值之一。
+
+// Evaluator 最后必须返回两个东西：文字 feedback + 一个固定范围里的 score。
+
+evaluator = Agent[None]( // 现在不用深究这个 [None]。这是 Python generic type 相关的东西。这里大致是在说：这个 Agent 没有额外的 dependency/context 类型需要传进来。
+
+    name="evaluator",
+    instructions=(
+        "You evaluate a story outline and decide if it's good enough. "
+        "If it's not good enough, you provide feedback on what needs to be improved. "
+        "Never give it a pass on the first try. After 5 attempts, you can give it a pass if the story outline is good enough - do not go for perfection"
+    ),
+    output_type=EvaluationFeedback, //Evaluator 不要随便返回一坨自然语言，要按照 EvaluationFeedback 的结构输出。
+)
+
+
+async def main() -> None: // -> None 这是 return type hint。意思：main() 本身不打算 return 一个值。
+    msg = input_with_fallback(
+        "What kind of story would you like to hear? ",
+        "A detective story in space.",
+    )
+    
+    input_items: list[TResponseInputItem] = [{"content": msg, "role": "user"}] //后面里面的{}是一个 Python dictionary；[]是个list;
+
+    // : list[TResponseInputItem]是 Type hint。意思大概就是：input_items 是一个 list，而且里面每一项应该是 Responses API 可以接受的 input item。
+    // TResponseInputItem约定于一条合法的模型输入 item 的类型。
+    //这一整句就是：创建一个“模型输入消息列表”。
+
+    latest_outline: str | None = None //latest_outline 的格式可以是 string，也可以是 None。然后为什么要加上等于呢？因为一开始它就是什么都没有，所以一开始就是 None
+    auto_mode = is_auto_mode()
+    max_rounds = 3 if auto_mode else None // conditional expression / ternary expression。常见的 Python 语法就是：如果 auto_mode 是 True 的话，那么就是让这个 max_rows 等于 3；如果 auto_mode 是 False 的话，那么就是让 max_rows 等于 None。 意思就是在普通模式下，让 max runs 等于 null；但如果是在自动测试模式下，就给 max runs 赋一个 3 的值
+    rounds = 0
+
+    # We'll run the entire workflow in a single trace
+    
+    with trace("LLM as a judge"): //然后 With Trace 之前说过，要把整个 flow 记录成一次 Trace
+        while True: // 外层循环无限跑，直到碰到里面的 break
+            story_outline_result = await Runner.run(
+                story_outline_generator,
+                input_items, //就是放进去的时候是 input items 这个消息列表，然后第一次的时候就只有user: A detective story in space.
+            )
+
+            input_items = story_outline_result.to_input_list() //把刚才这一轮运行的内容变成下一轮还能继续使用的 input list。旧 input + 新生成内容 → 新 input_items
+            
+            latest_outline = ItemHelpers.text_message_outputs(story_outline_result.new_items)//从 Generator 这一轮新产生的 items 里面，把文本内容拿出来。ItemHelpers.text_message_outputs(...)是SDK提供的拿信息用的。
+            print("Story outline generated")
+
+            evaluator_result = await Runner.run(evaluator, input_items) // 把刚才拼接好的input_itmes给evaluator。
+            result: EvaluationFeedback = evaluator_result.final_output //这里 result: EvaluationFeedback 只是再给 Python/type checker 一个提示：result 应该是 EvaluationFeedback 类型。Final_Output 就是之前说过了，这是它最后真的出来的那个结果。
+
+            print(f"Evaluator score: {result.score}")
+
+            if result.score == "pass":
+                print("Story outline is good enough, exiting.")
+                break
+
+            if auto_mode:
+                rounds += 1
+                if max_rounds is not None and rounds >= max_rounds:
+                    print("Auto mode: stopping after limited rounds.")
+                    break
+
+            print("Re-running with feedback")
+
+            input_items.append({"content": f"Feedback: {result.feedback}", "role": "user"}) //append 就是在 list 最后再加一个 item， 现在input_items是用户要求 + Generator 第一版 outline + Feedback
+
+    print(f"Final story outline: {latest_outline}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
+
+# Checkpoint in LongGraph
+
+这个东西之所以存在，是因为分情况来看，它确实有做 checkpoint 的必要性。checkpoint 本质上就是一个 snapshot。
+
+主要是为了防止一个巨大的 workflow 或者 loop 中途在某一个节点断掉。但与此同时，其他一些 function calling 已经正常跑完了，比如扣费这种对金钱敏感的操作，它已经扣掉了。在发现中间断掉出问题之后，怎么让它接着往下跑？在一些关键服务上，必须在没有重复执行的情况下，再去决定接下来怎么搞。
+
+这其实是必然的一条路。不管是从 token 的成本考虑，还是某些特定的服务机制：比如付钱，它本身就是一次性的操作。哪怕中途断了，哪怕机房烧了，它也不能再去扣第二次费。
+
+这里我指的是像网上买东西这种单次扣费服务，不是指订阅类的扣费。抱歉我这边说得有点太含糊了，大概就是这样
