@@ -116,6 +116,68 @@ The most useful specs are self-contained: they name the files and interfaces inv
 
 ### manage sesssion
 
+#### manage context use /clear, /compact xxx , /btw 
+Use /clear between related tasks to reset context.
 
+When auto compaction triggers, Claude summarizes what matters most, including code patterns, file states, and key decisions
+For more control, run /compact <instructions>, like /compact Focus on the API changes - 就是他的那个 compact 呀，也可以去指导他 focus on 某些事情。
 
+To compact only part of the conversation, use Esc + Esc or /rewind, select a message checkpoint, and choose Summarize from here or Summarize up to here. The first condenses messages from that point forward while keeping earlier context intact; the second condenses earlier messages while keeping recent ones in full. See the rewind menu’s summarize options. - 这个之后看吧，确实没做过。Anthropic 在控制这方面，确实把很大的 Autonomy（自主权）都交给了用户。那这样的话，其实我就能明白为什么他们的公司文化一直都在强调对 CLAUDE.md 的控制。整个企业文化就是这样，非常 hacker 文化，把自主权交出来，让用户能够去选择、去做这样的控制，而不是直接包圆了。
+
+Customize compaction behavior in CLAUDE.md with instructions like "When compacting, always preserve the full list of modified files and any test commands" to ensure critical context survives summarization
+
+For questions that don’t need to stay in context, use /btw. The answer never enters conversation history, so you can check a detail without growing context. - 哎，这个好，这个确实好！之前确实不知道，长见识了，还能这么干呢！我问过不少这种问题
+
+#### use subagents for investigation
+
+这个主要是因为，尤其是对一个 code base 做调查的时候，因为它读的文件太多了，context window 禁不住这么挥霍。所以就是让 sub-agent 去干，免得影响到主 conversation 嘛
+
+#### Rewind with checkpoints
+
+Claude automatically snapshots files before each change so a checkpoint can restore them. Double-tap Escape or run /rewind to open the rewind menu. You can restore conversation only, restore code only, restore both, or summarize from a selected message. See Checkpointing for details.
+
+Instead of carefully planning every move, you can tell Claude to try something risky. If it doesn’t work, rewind and try a different approach. Checkpoints are saved with the conversation, so you can close your terminal, resume the session later, and still rewind. (Checkpoints only track changes made through Claude’s file editing tools. Changes made through Bash commands or external processes are not captured. This isn’t a replacement for git.)
+
+-这个也好，它能自带一个这样的保存。这点起码比 Codex 好，Codex 让他去回撤的时候，要是那个时候没有做git，他确实回撤不了。
+
+### Automate and scale
+
+With claude -p "your prompt", you can run Claude non-interactively, without an interactive prompt. The run still creates a resumable session unless you pass --no-session-persistence. Non-interactive mode is how you integrate Claude into CI pipelines, pre-commit hooks, or any automated workflow. The output formats let you parse results programmatically: plain text, JSON, or streaming JSON.
+
+这个就是把 Claude 作为一个本地 API 去理解，把它串在工作流里面。这个时候会用，也挺常用的。
+
+One-off queries:
+
+claude -p "Explain what this project does"
+
+Structured output for scripts: claude -p "List all API endpoints" --output-format json
+
+Streaming for real-time processing: claude -p "Analyze this log file" --output-format stream-json --verbose
+
+The first command prints plain text. The json format returns a single JSON object with a result field. The stream-json format prints one JSON object per line, starting with an init event.
+
+### run multiple claude sessions
+
+其实意思就跟 orchestration 差不多，跟通用的一些 orchestration 差不多。
+
+这种东西无非就两种：
+
+1. 让他们同时站在同一个起点，各自往不同的方向去做实验
+2. 做一些编排，让另外一个 model 作为 judge 去跑这个 loop，以此来保证最终的结果
+3. 然后是一些 handoff 呀，还有一些让一个 manager 来去管所有 submission 的结果呀什么的，就还是那种 orchestration 的东西啊
+
+其实也没有什么新奇的东西，大家都这样
+
+#### Worktrees 
+run separate CLI sessions in isolated git checkouts so edits don’t collide
+
+这个是用在对同一件事情有很多实验性 idea 的时候：让他们同时朝着多个方向去做，但不会互相乱写，每个人都是一份分开的东西
+
+#### Cross-session messaging: let the sessions you run yourself pass findings to each other - 这个有用，但是回头看
+
+#### Agent teams: experimental and disabled by default. Automated coordination of multiple sessions with shared tasks, messaging, and a team lead
+
+#### /batch xxx to distribute work across many parallel Claude invocations
+
+这个适用在那种很大的 migration，或者说范围很广、各种杂事破事很多的 analysis 上。
 
