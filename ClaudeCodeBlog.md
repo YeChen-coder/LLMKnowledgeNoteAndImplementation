@@ -1,3 +1,7 @@
+few-shot 不是 recommendation system 那边的 cold start (Cold start 是说，当一个新用户没有很多历史记录可以去做 recommendation 的时候，就去找到一群相似用户，然后用 collaborative filtering 来做)，
+
+few-shot 就是说在 prompt 上，举个例子、按什么格式输出，就这么点事儿。- 这不是本来就是这么做的吗。
+
 # https://code.claude.com/docs/en/best-practices
 
 Most best practices are based on one constraint: Claude’s context window fills up fast, and performance degrades as it fills.
