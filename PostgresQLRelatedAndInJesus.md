@@ -149,6 +149,15 @@ SELECT * FROM agent_runs WHERE result->>'status' = 'failed';
 
 用 pgvector 的话，全文检索并不需要另外搭。PostgreSQL 本身就自带全文检索：tsvector 加 GIN 索引。所以向量和全文完全可以放在同一个 Postgres 库里，一条 SQL 就能做混合检索。我上一条说"通常要另外搭"，这一点只对 Pinecone 成立：它主要存向量，要做关键词检索，得自己另外生成稀疏向量传进去。
 
+###  生态层面的推动
+LLM 写 Postgres SQL 写得特别好：网上 Postgres 的资料和代码非常多，AI 编程工具生成的 SQL 质量高。这也让 AI 写代码、搭应用时倾向默认选择 Postgres
+
+托管服务很顺手：Supabase（Postgres + 认证 + API + pgvector 一整套）、Neon（Serverless Postgres，几秒就能开一个库，还支持像 git 一样建分支）。很多 AI 应用生成器和 agent 平台都把它们作为默认数据库，因为 agent 可以随时开一个新库来用
+
+资本也在押注：2025 年 Databricks 收购了 Neon，Snowflake 收购了 Crunchy Data，两家都是做 Postgres 的公司
+
+完全开源、许可宽松：不会被某家厂商绑定，也没有 MongoDB、Redis 那样的许可证争议
+
 ### 不足之处
 
 postgreSQL它也不是万能的:
