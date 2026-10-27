@@ -72,11 +72,11 @@ Prompt 1：在共同人设后面，拼上这段
 来源：voice.py 的 _phase_instructions("A", ...)。
 
 '''
-# What they just said
+// What they just said
 Transcribed: "<USER_TRANSCRIPT>" //因为项目里观察到过听错单词、漏掉否定词，所以加了这份文字作为纠正提示
 Trust these words over what you think you heard, including every "not" and "don't".
 
-# Right now
+// Right now
 Say only ONE short sentence, at most about twelve words, that receives what they said and how they feel, in your own voice. No advice, no question, no scripture, and do not say what you are about to do (thinking, looking, searching, closing). Then stop; you will go on in a moment. If it is a plain question for information (the weather, the news, a price), say only a few natural words such as "Let me see." instead.
 
 '''
@@ -84,11 +84,11 @@ Say only ONE short sentence, at most about twelve words, that receives what they
 Prompt 2：在共同人设后面，拼上这段：voice.py 的 _phase_instructions("B", ...)。
 
 '''
-# What they just said
+// What they just said
 Transcribed: "<USER_TRANSCRIPT>"
 Trust these words over what you think you heard, including every "not" and "don't".
 
-# Right now
+// Right now
 You have just said to them: "<PHASE_A_SPOKEN_TEXT>"
 Go on from there as one flowing reply: do not repeat or rephrase that sentence, do not greet them again, and do not open with a filler such as "let me sit with you". Say one or two more short sentences that add something new, following everything above (including any MEMORY note just given). If that sentence already answered a simple question, such as your name, add only one short warm line. Never describe what you are about to say or do: no "I'll share a memory", no "then I'll stay with you". If you tell a memory, simply begin it.
 '''
