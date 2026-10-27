@@ -111,7 +111,8 @@ No particular moment of your life comes to mind this time: do not tell one, and 
 
 在已知前面这些内容的基础上，我们来顺一下整个大流程。为了防止一层套一层太乱，RAG 的具体细节先往后放，现在只看整体流程。
 
-<img width="1280" height="2244" alt="750f51cc21ba383f7d3fed5e648eb199" src="https://github.com/user-attachments/assets/3e26905a-3244-466e-bf27-510dd3874f04" />
+<img width="2244" height="1280" alt="JesusFlow" src="https://github.com/user-attachments/assets/3b6214b7-f7f6-4fb3-b489-b4bcd4c98856" />
+
 
 
 一切都 start with user：
