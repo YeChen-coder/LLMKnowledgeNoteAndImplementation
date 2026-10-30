@@ -177,3 +177,90 @@ Bedrock Knowledge Bases 建知识库时，要选的东西几乎就是这四步�
 我也很想吐槽Jusus项目里的 memory，搞得实在是太有歧义了。在我自己的Jesus项目里，memory 指的是从 Gospel 里边搞出来的耶稣生平的那些 chunk。其实一般来说，大家普遍说的 memory system 都是指对用户的一些记忆。
 
 AWS 上管"记住用户"的是 Bedrock AgentCore Memory，分短期记忆（这次对话）和长期记忆（跨对话的用户信息），和 RAGFlow 的 Memory 是同一类东西。
+
+# 个人网站上的Bedrock chatbot
+
+## hybrid research 
+抓大放小吧：
+
+HNSW 指的是向量索引，它和 OpenSearch 的 KNN 都是一种东西。具体算法什么的就别揪了，反正知道它是一个针对语义空间的 Vector 索引就得了。
+
+然后那个 GIN，它是 PostgreSQL 的一个倒排索引，记录每个词出现在哪些块里边。
+
+BM25 是一种打分方式，BM25 本身不是索引。但这东西也是抓大放小，具体算法各家都有各家的独门之道，不重要，知道它是个关键词索引就行了。
+
+我这边是用 Hybrid，两边都用了，完事儿了; weight 参数它是 Bedrock 的黑盒，不知道，没法调，就是它握在 AWS 手里边，没法看.
+
+## Bedrock 概述
+
+AWS 的 Bedrock 是一个大平台，Knowledge Base 只是其中的一个功能。Bedrock 里面除了 Knowledge Base，还包括：
+
+• 各种大语言模型（比如 Claude 等）
+• Agents Workflow（托管的 Agent 工作流）
+• Guardrails（内容安全过滤）
+• Evaluations
+
+这个项目之中，虽然说 AWS 那边 Knowledge Base 直接提供了一个全包的“检索加生成”方案，但我这边没有用这个全包的，仍然是给它拆开处理的。
+
+也就是 Knowledge Base 这边只负责检索，检索出来的这些 chunk，我再单独让这里去Lambda调用 Claude它走 Haiku。
+
+这样做的好处是：
+
+1. 对 prompt 能有更多的把控
+2. log 会更全一些，方便排查问题
+3. 也更方便后续做调整和更改
+
+
+### Evaluations
+
+针对这种事情，它有一个 Bedrock Evaluation，而且能专门评测 Knowledge Base。它有内置参数，也能自定义。
+
+评测方式是拉上一个 model 做裁判：准备一份问题集（问题加答案放在 S3 里），它会跑一遍我的 RAG，然后再交由大模型去做逐条打分
+
+内置指标分两类任务：
+
+只评检索（Retrieve only）- 上下文相关性：查到的块和问题相不相关。上下文覆盖率：标准答案需要的信息查到了多少（要你提供标准答案）
+
+检索 + 生成	- 正确性、完整性、忠实度（有没有超出资料编造，也就是幻觉）、引用准确度、有用性、逻辑连贯性，还有有害内容、拒答这类安全指标
+
+Bedrock 的内置指标全靠 LLM 当裁判打分。好处是不用逐条标注"正确的块是哪个"，坏处是裁判自己也可能打错，每跑一次还要付裁判模型的钱。
+
+自定义： 你可以写自己的评分提示词，定义新指标。比如给你的场景定义一个"有没有编造联系方式"。
+
+
+做 evaluation 都得有一套标准答案，其实它本身就是一个 well-defined problem。对于纯文字的内容，我描述可能不是很精准，但意思就是这种有法可依的、有固定文字能确定对错的场景，其实已经有一套非常成熟的技术了。
+
+这种地方没有什么好发挥聪明才智的，而且越是发挥聪明才智，出来的结果八成不会比标准的 best practice 好到哪去，大概率只会更差。所以这边就是他们说什么就干什么。毕竟已经发展到这个程度了，这甚至都不是重新造轮子的问题，自己弄八成根本造不出轮子，只会造出一个方的多边形; 这个又不是写硕士论文，又不是要创新点，你就听听人家的话得了.
+
+## 我的资料进库
+
+相当粗糙的，不过这事儿也不怪 AI。因为我用 Claude Code 帮我干的，我还挺理解它。
+
+<img width="677" height="220" alt="image" src="https://github.com/user-attachments/assets/bfd7f96a-be6a-4de8-abfd-0f724161ff0b" />
+
+
+它现在的切块（chunking）处于一种非常原始、远古的状态：
+• 每一块最多 400 token
+• 相邻两块的 overlap 是 15%
+• 每块交给 Amazon Titan Text Embeddings V2，得到 1024 维向量
+• 再写入 Aurora 的 bedrock_integration 表里（一行是一块）
+
+我想吐槽的就是这个切块的程度。它拿了我 GitHub 上 public 仓库的 README，还有原本网站的文案，一共生成了 42 个 .md 文件。
+
+这事儿真不怪它，主要是我那些 README 写得非常跳脱：分段没好好写，里边写的大多不是技术架构，更多是开发日志和各种吐槽；加上本人表达欲极其旺盛，就堆得非常长，也没好好分段，确实是 garbage in, garbage out 了。
+
+没关系，我之后单独再去调一下，跟它说别看 README，去看一些专门的技术架构文档。算了，我现在就让它干吧 - doing
+
+## 访客提问后
+
+<img width="675" height="405" alt="image" src="https://github.com/user-attachments/assets/fd0f11d7-655b-488c-b2b3-83c40dfb7df3" />
+
+Lambda function, 老朋友了，之前就干过，这个就不在这儿说了。
+
+不过他这边我有一个疑问：为什么这边还跟 DynamoDB 扯上关系了？- 这个因为设定了每天最多是 80 次嘛，所以就为了防止钱包爆炸这事。也是为了防止 DDoS，防止 Cloudflare 他那边：就是号称他老板“人美心善”搞的那个 DDoS 防护墙给失效了，让我这边爆炸了，所以这边就愣给他加上了这么一层。
+
+而且便宜，这就是以各种方式去实现这个需求。因为他这个技术是得在唤醒 PostgreSQL 之前去做的。
+
+<img width="741" height="330" alt="image" src="https://github.com/user-attachments/assets/8596dc52-bbcc-4cf4-9a03-0d4781e12cef" />
+
+<img width="927" height="252" alt="image" src="https://github.com/user-attachments/assets/f8555137-8a93-44a2-a26e-dff9f2dd1870" />
