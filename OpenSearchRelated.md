@@ -131,7 +131,7 @@ OpenSearch 里的 match 默认就是 BM25。它给我匹配出来三个结果，
 
 BM25 就是 TF-IDF 再加点其他配置什么的，在别的文章里写过无数次了。虽然我每次都忘，但大概知道是什么意思就行了。抓大放小，我又不是搞科研的.
 
-它的坏处就是它不懂 semantic。因为我们刚才说了，我们这边的 analyzer 用的是 English 的，它能做到的是把 worried 和 worry 识别成同一件事，但并不知道 care 和 worry 也是同一件事，因为它不是基于语义的
+它的坏处就是它不懂 semantic。因为我们刚才说了，我们这边的 analyzer 用的是 English 的，它能做到的是把 worried 和 worry 识别成同一件事，但并不知道 tired 和 worry 也是同一件事，因为它不是基于语义的
 
 ## embedding
 
