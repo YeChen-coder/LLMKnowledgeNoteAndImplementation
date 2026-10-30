@@ -22,11 +22,12 @@ GraphRAG： 2024 年微软把它做火的。核心思路是：让大模型从文
 
 In short, 知识图谱是材料，GraphRAG 是做法；LLM 让这份材料重新变得做得起。
 
-用 GraphRAG 其实不太适合这件事情。现在本来用的就是 RAGFlow，它本身就自带知识图谱的能力。如果要做的话，在当前已有的这些向量之上再做一些 processing 就行。但是它默认模板不行，是给现在公司用的，基本上全是法规、谓词之类的，这块还得改。
+用 GraphRAG 其实不太适合这件事情。现在本来用的就是 RAGFlow，它本身就自带知识图谱的能力。如果要做的话，在当前已有的这些向量之上再做一些 processing 就行。但是它默认模板不行，是给现在公司用的，基本上全是法规、谓词之类的，这块还得改。-To be specific, 容器里的 knowledge_graph.yaml，默认抽取的实体类型是人物、组织、产品、法规、地点，关系类型是"拥有、属于、导致、监管、位于"，是按企业文档设计的。用在福音书上，"产品"”法规"”监管"基本没用，而真正重要的"事件"”群体（法利赛人、门徒）"”遇见、医治、教导"都没有。
 
 我之前在想愣给它找一个应用场景，能不能放在我的个人网站上，把个人网站的 RAG 部署到 AWS 上面去炫个技，就聊到每个月的开销问题：
 
 1. AWS 那边提供 Neptune Analytics，但是太贵了。它是按图开着的时长收费，和有没有人访问没关系。官方价格 256GB 的图每小时大概 $7.68。但如果放在个人网站上，做个展示个人经历的东西，哪用得着 256GB？能凑够 1GB 都算我疯狂往里灌水了。按小时算真的太贵，这个方案不行。
+   
 2. 后来顺手再找应用场景，想说能不能在个人网站上搞 Knowledge Base 再做 hybrid search。看了一眼，唯一对钱包友好也比较实际的，就是 Knowledge Base 用 S3 Vectors 做 search。可是用 S3 Vectors 基本上就只是 BM25，根本用不了 hybrid。但凡想用 hybrid search，就得用 OpenSearch，一个月起码 $150 打底。
 
 这边稍微补充一下：在 AWS Knowledge Base 里面处理文档，必须给它配一个向量库，重点其实是在这个向量库的成本上。（- 顺手吐槽一下，AWS 里面那个 Hybrid 检索，它的权重是不公开的，完全是个黑盒。我一直觉得这事非常让人牙疼：这种 weight 怎么能做成黑盒呢？还是说它底层用了特别复杂的算法，导致根本就不能从一个 weight 的角度去理解，反正就是开箱即用、一用就完了那种，主打一个非常简单直接易懂）
@@ -39,7 +40,7 @@ In short, 知识图谱是材料，GraphRAG 是做法；LLM 让这份材料重新
 • OpenSearch Serverless：经典版一个月 $175 起步
 • OpenSearch 托管集群：既然是集群，一个月起码得开着一台机器，而且文档里写了它不支持 Hybrid Search
 3. Aurora PostgreSQL (pgvector)
-我之前在别的文档里写过它的扫盲。如果用 Serverless v2，没人访问的闲时可以缩容到 0。问题在于冷启动需要等十几秒，聊天的时候会先卡顿一下。不过为了成本和钱包考虑，顶多在文档里说明一下冷启动要十几秒，我觉得其实也行，没准真行。另外 PostgreSQL 是可以做混合检索的。
+我之前在别的文档里写过它的扫盲。如果用 Serverless v2，没人访问的闲时可以缩容到 0。问题在于冷启动需要等十几秒，聊天的时候会先卡顿一下。不过为了成本和钱包考虑，顶多在文档里说明一下冷启动要十几秒，我觉得其实也行，没准真行。另外 PostgreSQL 是可以做混合检索的。（- 补充一下，我觉得这事可行。它是按照启动之后的时间计费的。反正它冷启动也就十几秒，而且也只是在第一个问题上慢，后续还可以搞一些工程手段对它进行优化。我觉得这事能干，完全可以炫技，给我简历上再加点东西）
 4. Neptune Analytics (GraphRAG)
 这个非常贵，是按小时计费的。
 
@@ -94,6 +95,7 @@ AWS 上和 RAGFlow 整体最像的，其实是 **Bedrock Knowledge Bases**：它
 可以看到，OpenSearch 只负责"存和查"这一段。RAGFlow 其他那些你熟的东西（解析、切块、对话、Agent），在 AWS 上要么归 Bedrock 管，要么你自己写在 Fargate 或 Lambda 里。
 
 ---
+# Start from RagFlow
 
 <img width="371" height="347" alt="image" src="https://github.com/user-attachments/assets/4a808a39-e81b-44d2-9b79-352db7e1cee3" />
 
@@ -109,6 +111,69 @@ AWS 上和 RAGFlow 整体最像的，其实是 **Bedrock Knowledge Bases**：它
 
 里面主要是切好的块、算好的向量，还有关键词索引。
 
+既然谈这件事情，就顺手把 RAGFlow 的事先理清吧。RAGFlow 理清了，再去涉及到 AWS 那边也没什么难的。
+
+圣经它本来的结构是先是书，书里有章，章里有节，这个节类似于 John 21:20。
+
+除此之外，因为我用了这个译本，它在节和节之间加了小标题，把讲同一件事的几节归成一组，比如 John 21:20-25。
+
+所以我这边其实是按照小标题区分的，把整个原文档按照它一共有的 487 个小标题给切分开; 这个叫 “structure-aware chunking（按文档自身结构切块）”
+
+反正这个就是 RAGFlow 里面一个文档打开的样子。因为这个项目本来就做了一个 ingestion enrichment，所以它是对每个 chunk 单独先让 LLM 过了一遍，去给它写 5 个关键词和 3 个问题。
+
+<img width="1352" height="785" alt="image" src="https://github.com/user-attachments/assets/9899292d-a93e-462b-b31b-af4941492490" />
+
+<img width="822" height="618" alt="image" src="https://github.com/user-attachments/assets/9392b46a-c20b-45e7-9492-0b2731a6dfe4" />
+
+对不起啊，我之前确实没有仔细看，之前进度实在太迅速了，导致我根本顾不上来。但我自己看了一下，发现那个鬼关键词我不是很理解：为什么有的 chunk 它把这个 verse 的编号也当成了一个关键词？- 因为它就是个小标题，真的就这么一句话，你非让它从中提炼出 5 个关键词来，它也费劲。以下图为例吧
+
+<img width="762" height="592" alt="image" src="https://github.com/user-attachments/assets/283996c9-d5fe-4b9e-85e4-6490bf49ae2d" />
+
+再说，然后再往下就是 ingestion enrichment 的一些配置了
+
+几个参数的说明：
+
+1. Candidate：先粗选出多少条，然后给 Rerank/Relevance 排序用的，我这里的程序里设的是 30
+2. Metadata filter：指的是按标签筛选。在程序的 V2 版本中，因为要求必须得是 Japanese，所以当时设的是 yes；但现在 V3 根本不用那个了，所以这个目前也没用
+3. Top N：指的是最后显示几条，我这个程序里配置的是 3
+4. 网页上没写，但程序里设了 min score = 0.3。意思是如果排第一的结果都不到 0.3，那就当没找到，挑出来的这三个就一个都不要了
+
+## configuration 的一些配置参数
+
+<img width="1271" height="783" alt="image" src="https://github.com/user-attachments/assets/1faf1ad3-5dc2-44fb-a69f-56c3ee2f5592" />
+
+这个窗口管的是**数据进图书馆之前要经过的加工流水线**。前面讲的都是"怎么找书"，这里讲"书是怎么上架的"。
+
+### Parse mode：选一套现成的流水线
+
+**General（Built in）** 意思是"通用型，系统自带的"。RAGFlow 给不同类型的文档预备了不同的流水线，比如 Q&A（问答对）、Paper（论文）、Book（书）、Laws（法律条文）、Table（表格）等。你也可以自己拼一套。
+
+你的经文是纯文本，所以用 General，然后在里面改了几个设置。
+
+### 下面四个标签 = 流水线的四道工序，从左到右依次执行
+
+| 工序 | 干什么 | 打比方 | 你的项目里怎么设的 |
+|---|---|---|---|
+| **Parser** | 把文件读成纯文字 | 把书拆封、摊开 | 默认。你的文件本来就是 txt，没什么要处理的 |
+| **General Chunker** | 把文字切成卡片 | 把书拆成一张张卡片 | **按换行切，一行一张卡片；整个文件是父，每行是子**。这就是之前讲的"一节经文一张卡片" |
+| **Extractor** | 让 LLM 给每张卡片补标签 | 给卡片写上关键词和"可能回答的问题" | **每张卡片 5 个关键词、3 个问题**。你在卡片里看到的那些就是这一步生成的 |
+| **Indexer** | 建索引 | 把卡片编进两套目录 | **两套都建：向量（按意思找）+ 全文（按关键词找）** |
 
 
 
+**Parser 页上那个 Enable vision enhancement**：遇到图片、扫描版 PDF 时，调一个能看图的模型去识别内容。我的文件是纯文字，用不上。
+
+### 和 AWS 的对应（顺便记一下）
+
+Bedrock Knowledge Bases 建知识库时，要选的东西几乎就是这四步：
+- **Parsing strategy**：对应 Parser
+- **Chunking strategy**：对应 Chunker
+- **自定义处理（Lambda）**：对应 Extractor。AWS 不自带"每块生成问题"的功能，要自己写
+- **Embedding model + 向量库（比如 OpenSearch）**：对应 Indexer
+
+
+这边它还有一个 memory，我顺手看了一下是什么意思：它指的是对用户的那种 memory。
+
+我也很想吐槽Jusus项目里的 memory，搞得实在是太有歧义了。在我自己的Jesus项目里，memory 指的是从 Gospel 里边搞出来的耶稣生平的那些 chunk。其实一般来说，大家普遍说的 memory system 都是指对用户的一些记忆。
+
+AWS 上管"记住用户"的是 Bedrock AgentCore Memory，分短期记忆（这次对话）和长期记忆（跨对话的用户信息），和 RAGFlow 的 Memory 是同一类东西。
