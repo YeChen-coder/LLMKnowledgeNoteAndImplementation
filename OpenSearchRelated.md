@@ -211,6 +211,12 @@ JVM 定期清理不用的对象，Heap 越满 GC 越频繁。它会把不用的�
 
 <img width="1090" height="598" alt="image" src="https://github.com/user-attachments/assets/c5d0b864-3881-487c-84f6-96be0e0ff514" />
 
+再补充一下：因为我这个 IAM 身份的 root 是创建域名的账号，所以讲道理，我刚才的话可能说得太绝对了。
+
+顺手说一下，这里面其实有两种身份：
+
+1. user：精确到某一个具体的 IAM 身份
+2. backend role：常用来映射一个 IAM role，所有扮演这个 role 的程序都会获得对应权限
 
 ## 4. 要监控的指标，以及会把集群"锁死"的几个阈值
 
