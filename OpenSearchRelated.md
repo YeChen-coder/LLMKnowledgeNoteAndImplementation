@@ -387,3 +387,41 @@ Bedrock 上能用的 embedding 模型只有 Amazon 自己的（比如 Titan 系�
 <img width="882" height="416" alt="image" src="https://github.com/user-attachments/assets/b8d29bab-77f6-47bd-ab17-a5eb92180db4" />
 
 Cohere 这边是少了 enrichment 和 rerank 两样，还是追平了。
+
+Rerank：能。 在 search pipeline 里加一个 rerank processor，通过 connector 调远程的 rerank 模型，比如 Bedrock 上的 Cohere Rerank 3.5 或 Amazon Rerank。
+
+Chunk enrichment：能。 在 ingest pipeline 里加一个 ml_inference processor，通过 connector 调一个 LLM（比如 Bedrock 上的 Claude），导入时让它给每个 chunk 生成关键词和问题，存成新字段，再用 BM25 去搜这些字段。
+
+# AWS OpenSearch Pipeline
+
+Pipeline 就是一串按顺序执行的 processor。
+
+OpenSearch 里面主要有两种：
+
+1. Ingest pipeline：在 document 写入 index 之前执行。在上文的实验中，主要是 Titan embedding 和 Cohere embedding 做的事情：把 text 送给模型算出向量，然后存入 embedding 字段里。
+2. Search pipeline：在搜索的时候运行，主要分三个阶段（处理请求/query、合并结果、处理返回）。用户提问之后的后半部分处理，主要做的事情就是把 BM25 和向量检索两边的分数归一化，再按权重相加，也就是 hybrid search 的逻辑
+
+
+注意一下，在 OpenSearch 里面，dashboard 里的 AI search workflow 和 pipeline 是两种东西，pipeline 才是真正干活的 （AWS 主 dashboard 上，OpenSearch Service 那个页面左边写的 pipeline，指的是数据进来的 pipeline（点开能看见 S3 之类的，就是数据进来的通道）。它和我们现在谈的 ingest 和 search pipeline 没有任何关系，它是更前置的东西）
+
+<img width="1163" height="738" alt="image" src="https://github.com/user-attachments/assets/03e5f281-93de-4b05-a2c1-31f98668d2ff" />
+
+<img width="676" height="528" alt="image" src="https://github.com/user-attachments/assets/2aee2a70-1a14-4741-b2ea-81c17444e349" />
+
+反正上面就是列出了所有的 pipeline。其中有两个里面其实只有一步，容易让人产生疑惑，但其实不重要。
+
+它跟 CloudFormation 那边的逻辑差不多，就是一行一行往下顺着走，相当于正常代码顺序执行的那种逻辑
+
+举个例子：
+
+<img width="582" height="577" alt="image" src="https://github.com/user-attachments/assets/a179675d-63f8-4560-a4ee-b147abb12e4d" />
+
+
+第 1 步 set：加一个字段，记录写入时间
+→ 多了 "ingested_at": "2026-10-31T10:15:02Z"
+
+第 2 步 ml_inference：把 text 交给 LLM，让它生成问题，结果放进 questions
+→ 多了 "questions": "I'm exhausted, where can I find rest? ..."
+
+第 3 步 text_embedding：把 text 交给 Cohere，算出向量放进 embedding
+→ 多了 "embedding": [0.012, -0.034, ...]（1536 个数字）
