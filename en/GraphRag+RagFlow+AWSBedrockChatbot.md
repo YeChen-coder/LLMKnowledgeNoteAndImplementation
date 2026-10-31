@@ -1,4 +1,4 @@
-> English version of [AWSRagRelated.md](../AWSRagRelated.md). Original notes are written in Chinese/English mix.
+> English version of [GraphRag+RagFlow+AWSBedrockChatbot.md](../GraphRag+RagFlow+AWSBedrockChatbot.md). Original notes are written in Chinese/English mix.
 
 # A knowledge graph is a data structure; GraphRAG is a RAG method that uses that structure
 
