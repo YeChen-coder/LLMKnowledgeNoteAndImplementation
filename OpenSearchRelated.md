@@ -337,9 +337,53 @@ OCU（OpenSearch Compute Unit，OpenSearch 计算单元）：Serverless 的计�
 如果连 connector 都不想自己连，Serverless 那边还有一个自动语义增强（Automatic Semantic Enrichment）的功能，开启之后它自己就能去做语义检索，就不用连模型了，这也就是那个 Semantic Search OCU 的收费项。
 
 ---
+# AWS Opensearch 结果
 
-**如果只记三条：** blue/green 部署、FGAC 的 role mapping、向量检索吃内存。这三条最能看出一个人是真用过，还是只读过文档。
+<img width="877" height="470" alt="image" src="https://github.com/user-attachments/assets/f38c20b2-3bc8-448c-8b23-a0aed7463c7e" />
 
 
+AWS 上和本地的测评结果出来了，其实准确度都一样（那确实得一样啊。这次在 AWS 上的 OpenSearch 根本就没有做 embedding，而是把之前已经算好的向量直接传过去的。也就是说，传过去的 document 不是人类阅读的文字text，而是直接对应的 1000 多个维度的向量。搜索的时候也都一样用 k-NN 查询嘛，确实得一样，不一样才见鬼了），但速度上有差别：本地是 10 毫秒，AWS 上面是 200 到 300 毫秒。
 
+这个没办法，主要是因为网络的 latency，请求要从我这儿发到美国东部机房再回来，所以才导致的。
 
+不过如果正式部署的时候，把应用程序和 OpenSearch 放在同一个 zone 里，或者甚至直接放在同一个 VPC 里边，那网络开销自然就没了，也行吧
+
+# AWS ML connector to Bedrock
+
+模型用 Bedrock 上的 Amazon Titan Text Embeddings V2（输出 1024 维）
+
+出来的结果就是 Titan 明显 performance 要比 OpenAI 低一些哈，它这个模型在这个任务上确实弱一些哈
+
+其实下图有点容易让人误解，但他这边那个 OpenAI 3-small 的意思，还是把我电脑上原来已经用它导出来的这波向量作为 document 送过去的，并没有在 OpenSearch service 上再重新找 OpenAI 3-small 的 embedding 模型搞一遍； 再补充一下哈，这里实际上用 A 方法测的时候，因为我本地本来就有 OpenAI 的 API key，所以是在本地先拿 query 送去 OpenAI 的 embedding 模型拿到向量，然后再把拿到的向量送去 AWS 那边去对。
+
+为什么要这么折腾呢？是因为 OpenAI 的很多模型虽然上了 Bedrock，但 embedding 模型没上。上了 Bedrock 的基本上全是生成文字、输出类型是 text 的模型。
+
+Bedrock 上能用的 embedding 模型只有 Amazon 自己的（比如 Titan 系列、Multimodal Embeddings）、Cohere 的，还有 Twelve Labs（那个是视频用的），所以没有直连这么方便，才非得脱裤子放屁折腾这么一趟。
+
+不过无所谓，本来就只是个测试而已。Cohere 的 Embed v4 在 Bedrock 上口碑其实是最好的文字 embedding 之一，本来觉得不用测、差不多得了，算了，顺手干一遍吧
+
+<img width="900" height="457" alt="image" src="https://github.com/user-attachments/assets/8038446a-16f8-4d27-8c39-a26d9a2c579c" />
+
+<img width="605" height="221" alt="image" src="https://github.com/user-attachments/assets/47969caf-c6c8-4ad8-9a5b-a6224ea7a5ed" />
+
+<img width="886" height="456" alt="image" src="https://github.com/user-attachments/assets/4eadd446-6f9e-4398-ae55-70bfdc621577" />
+
+反正跑一圈下来，引擎换来换去（从 RAGFlow 换成本地 OpenSearch，又换到 AWS OpenSearch），其实影响一般，没那么大，纯向量一直都是 84% 左右。
+
+但是换了 embedding 模型之后掉得非常大，这说明 embedding 模型非常重要。
+
+另外，改写之后的问题是能够弥补弱模型的。从这张图来看，改写之后 Titan 和 OpenAI 的差距从 19 个点缩小到了 7 个点
+
+## embedding model: openAI 3 small VS Titan V2 VS Cohere Embed v4
+
+<img width="881" height="455" alt="image" src="https://github.com/user-attachments/assets/72b0985c-83a8-4255-b2fe-9fe67e0a040f" />
+
+当前这边其实都没用 rerank 嘛。你看第二行，纯向量加改写就能达到 95% 的成绩，甚至都没用 rerank；而 RAGFlow 那边的 95%，甚至还得叠一个 Voyage rerank 才能达到。
+
+所以这就说明，Cohere Embed v4 真的很不错了。
+
+不过讲道理，rerank 这层加不加对效果的影响，还真的是两说。项目里搞那个纯属炫技，真的纯炫技。落到实处还是得看具体效果，就别折腾了
+
+<img width="882" height="416" alt="image" src="https://github.com/user-attachments/assets/b8d29bab-77f6-47bd-ab17-a5eb92180db4" />
+
+Cohere 这边是少了 enrichment 和 rerank 两样，还是追平了。
