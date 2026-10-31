@@ -425,3 +425,13 @@ OpenSearch 里面主要有两种：
 
 第 3 步 text_embedding：把 text 交给 Cohere，算出向量放进 embedding
 → 多了 "embedding": [0.012, -0.034, ...]（1536 个数字）
+
+---
+
+还有一件事情。从之前的实验来看，Cohere 的 Embed v4 比 Amazon 自家的 Titan v2 实在好太多了。我就想，我在个人网页上做的那个 Bedrock Chatbot，原本用的是 Titan（想说换成 Cohere 会不会更好一点），于是就去做了一个实验。
+
+实验发现它们在中文上都很垃圾。这主要是精力上的取舍，不是技术上的取舍，单纯是因为更多奔着英文访问者的角度来做，只用心搞了英文，没怎么好好搞中文。
+
+但都不重要。因为在中文没有好好处理的情况下，这两个的结果其实都很垃圾，没有什么区分性；看下图就知道，在英文上的结果也是一模一样的。再加上 Cohere v4 要比 Titan v2 贵 6 倍，那何必呢？接着用 Titan v2 得了。
+
+<img width="988" height="330" alt="image" src="https://github.com/user-attachments/assets/585dc253-6752-4517-bff7-e03ee260e532" />
