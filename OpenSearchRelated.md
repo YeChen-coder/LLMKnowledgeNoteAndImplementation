@@ -203,9 +203,14 @@ JVM 定期清理不用的对象，Heap 越满 GC 越频繁。它会把不用的�
 2. **Access policy**：基于资源的 IAM 策略，决定哪些 AWS 身份能碰这个 domain
 3. **Fine-grained access control（FGAC）**：OpenSearch 自己的用户和角色系统，能细到某个 index、某个字段、某些文档（**document-level / field-level security**）
 
-**最常见的坑**：IAM 已经允许了，还是报 **403**。因为 FGAC 那层不认识你的 IAM 身份，要在 OpenSearch 里把 IAM ARN **映射（role mapping）**到一个 OpenSearch 角色上。
+**最常见的坑**：IAM 已经允许了，还是报 **403**。因为 FGAC 那层不认识你的 IAM 身份，要在 OpenSearch 里把 IAM ARN **映射（role mapping）**到一个 OpenSearch 角色上。 - 这边补充一下，就是不用了。
 
-我们等下第 3 步做的就是这件事，到时候你会亲手碰到。
+我用的那个 root 账号，就是用 SigV4（AWS CLI）登录的。我确定我什么都没干，但它其实已经在这边的 All Access 权限（也就是 map_user）里边有了。
+
+就看下图吧。
+
+<img width="1090" height="598" alt="image" src="https://github.com/user-attachments/assets/c5d0b864-3881-487c-84f6-96be0e0ff514" />
+
 
 ## 4. 要监控的指标，以及会把集群"锁死"的几个阈值
 
