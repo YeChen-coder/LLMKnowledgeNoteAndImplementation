@@ -22,13 +22,13 @@
 
 回到正题，为什么之前一直没写这个，今天突然开始写？因为刚才实在被 Codex 给气到了，it somehow got on my nerves。
 
-刚才在他跑 task 的时候，他内置的浏览器出了几分钟问题。那没问题，我这边还有 Chrome 呢，而且 Codex 自己也有 computer use，我浏览器开着他总能自己登。可是他跟我说他去找了 Edge，Edge 返回说工具不可用，然后他就直接停了。
+刚才在他跑 task 的时候，他内置的浏览器出了几分钟问题。那没问题，我这边还有 Chrome 呢，而且 Codex 自己也有 computer use，我浏览器开着他总能自己登。可是他跟我说他去找了 Edge，Edge 返回说工具不可用，然后他就直接停了。- 吐槽一下，我觉得这周 Codex 那边有些问题。其实这套东西在我这边起码跑满一个月了，之前它基本没有 call 过整台电脑的 computer use，甚至连 Edge、Chrome 都没有调用过，直接用内置的 browser 就搞定了。但这周它就开始疯狂动不动要整台电脑的 computer use
 
 问题是，我的 prompt 里写得清清楚楚：要从队列里拿 3 份进行投递，而且队列里起码还有 10 到 12 份。他在第 1 份碰壁报错之后就停了，我就去查他凭什么停：哪怕第 1 份报错，it always happens, but for the other two, why did you suddenly stop? 
 
 So I asked Codex, and Codex returned me the error response from Edge. And that is where the problem is lying: that error message is sent by Edge, but my prompt is sent as a user. Of course I have more priority, but Codex is taking the message from Edge as a cut signal.
 
-后来我就把这件事写进 README.md 里了。这个 README.md 是 Claude Code 和 Codex 共同维护的文件，里面写明了我最新 resume 的位置、个人情况，以及需要动态补充的内容。
+后来我就把这件事写进 Run.md 里了。这个 Run.md 是 Claude Code 和 Codex 共同维护的文件，里面写明了我最新 resume 的位置、个人情况，以及需要动态补充的内容。
 
 另外还有其他问题，真的一堆一堆的。
 
