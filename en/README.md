@@ -5,6 +5,7 @@ English versions of the notes in this repo. The originals (outside `en/`) are wr
 - [AgentAPI+SDK+ResponseAPI](../AgentAPI+SDK+ResponseAPI.md) (original is already in English)
 - [AgentSDKAndOrchestrationNote](AgentSDKAndOrchestrationNote.md)
 - [AnthropicAIFluencyNote](../AnthropicAIFluencyNote.md) (original is already in English)
+- [AzureAIFoundryRelated](AzureAIFoundryRelated.md)
 - [ClaudeCodeBlog](ClaudeCodeBlog.md)
 - [CodexHarness+OpenCodex+CodexCli](CodexHarness+OpenCodex+CodexCli.md)
 - [DataGovernmanceForAIAgent](DataGovernmanceForAIAgent.md)
