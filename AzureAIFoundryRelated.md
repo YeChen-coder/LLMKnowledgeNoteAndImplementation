@@ -823,3 +823,59 @@ Azure 把权限分成两种：
 排查顺序：403 → 先确认是数据面操作 → 查调用者在**这个资源的范围上**有没有数据角色（check for a data-plane role at the right scope）→ 刚加完角色仍 403，等权限生效（role assignment propagation can take up to ~10 minutes）。
 
 面试一句话："Azure separates control-plane and data-plane permissions, so even an Owner needs an explicit data role. It's not a hard barrier, since an Owner can grant it to themselves, but it makes data access a deliberate, audited decision."
+
+## 41. 常见报错速查表（除 403 外都亲手见过）
+
+| 状态码 | 典型报错 | 原因 | 第一步排查 |
+|---|---|---|---|
+| **401** Unauthorized | `audience is incorrect (https://ai.azure.com), or have expired` | 不认识你：token 缺失、过期，或 audience 不对 | 读报错 → 重新 `az login`（re-authenticate）→ 确认 token audience 是 `https://ai.azure.com`（verify the token audience） |
+| **403** Forbidden | `principal ... lacks the required data action ...` | 认识你，但缺数据面角色 | 确认是哪个身份在调用（check which identity is calling）→ 在正确范围加数据角色（assign a data-plane role at the right scope）→ 等待生效 |
+| **404** Not Found | `The API deployment for this resource does not exist` | 部署名写错、已删除，或刚建还没生效 | 核对部署名（verify the deployment name）→ 确认 endpoint 指向对的资源 → 刚建的等 5 分钟 |
+| **429** Too Many Requests | `rate_limit_exceeded` + `retry-after-ms` | 超了 TPM 或 RPM 配额 | 看哪个 `remaining` 归零 → 带退避重试（retry with backoff）→ 经常发生就加配额或负载均衡 |
+| **400** 内容过滤 | `filtered due to the prompt triggering ... content management policy` | 平台 guardrail 拦下了输入或输出 | 看命中的类别（check which filter category triggered）→ 判断真有害还是误报（true vs false positive）→ 误报就改写 prompt 或申请调整过滤策略 |
+
+**401 实验怎么做的**：token 像门票，audience 是票面上的"限某某场馆"。脚本故意向 Entra ID 要了一张 `management.azure.com`（Azure Resource Manager，管资源的服务）的票，拿去敲 Foundry 的门，Foundry 只认 `ai.azure.com` 的票 → 401。票是真的、也登录了，只是**拿错了场馆的票**（a valid token with the wrong audience）。AWS 对照：签给 `s3` 的 SigV4 请求拿去调 `bedrock` 也不认。
+
+**403 的报错很具体**：会写出是哪个 principal（身份）、缺哪个 data action、在做什么操作。带 `data action` 字样就说明是数据面问题，Owner 帮不上忙。（典型格式，这次没亲手触发。）
+
+**通用排查顺序**（troubleshooting order）：
+1. 先读完整报错，不只看状态码（read the full error, not just the status code）
+2. 4xx 是调用方的问题（client-side），5xx 是服务端的问题（service-side）
+3. 401/403 查身份和权限，404 查名字和地址，429 查配额，400 查请求内容
+
+---
+
+# 面试总结（第 3 段：工具 + 故障排查）
+
+## 30 秒版
+
+"I added a client-side function tool to my Foundry agent and scoped its instructions to fix a red-team finding. Then I deliberately reproduced the common failures: a 429 on a 1K-TPM test deployment, a 401 with a wrong-audience token, a 404, and a content-filter block, and documented the first diagnostic step for each."
+
+"我给 Foundry agent 加了客户端执行的 function tool，并用限定职责范围修了红队发现的问题。然后我故意复现了常见故障：在 1K TPM 的测试部署上打出 429，用错误 audience 的 token 打出 401，还有 404 和内容过滤，并总结了每种错误的第一步排查方法。"
+
+## 2 分钟版
+
+| 环节 | 我做了什么 | 发现 |
+|---|---|---|
+| Function tool | `record_visitor_message`，schema 在 agent 里，函数在本地执行 | 模型决定，代码执行（the model decides, my code executes）；参数当不可信输入 |
+| 安全修复 | instructions 限定三项职责，验证不再给删库命令 | instructions 只是第一道防线，要纵深防御（defense in depth） |
+| Tool Call Accuracy | 第一次 7 行全 skipped；读开源评估器源码定位 | 内置工具命名不一致（`file_search_call` vs `file_search`）；客户端函数云端跑不了 → 本地跑轨迹、云端打分，最终 5/5 满分 |
+| 429 | 1K TPM 测试部署，6 个并发请求 | token 还剩一半，是 RPM 先归零；重试要认 `retry-after-ms`；生产用 SDK 重试，频繁限流靠负载均衡和容量 |
+| 401 / 404 / 内容过滤 | 一个脚本全部复现 | 报错信息很具体，第一步永远是读完整报错 |
+| 403（概念） | 没做实验 | Owner 只有管理面权限，数据面要单独授权：职责分离（separation of duties） |
+
+## 和 AWS 的区别
+
+| 点 | AWS | Azure Foundry |
+|---|---|---|
+| 工具接入 | AgentCore Gateway：服务端，把 Lambda/OpenAPI 包成 MCP | Function tool（客户端执行）；最接近 Gateway 的是 Toolbox |
+| Guardrail 检查点 | Bedrock Guardrails：输入和输出；中间步骤自己调 `ApplyGuardrail` | 4 个检查点：输入、工具调用、工具结果、输出（中间两个预览） |
+| 限流 | `ThrottlingException`（429） | 429 + `x-ratelimit-remaining-*` + `retry-after-ms` |
+| 管理 vs 数据权限 | 默认不分，AdministratorAccess 都能做 | 默认分开，Owner 也要数据角色 |
+| 部署 / 容量 | on-demand、cross-region inference、Provisioned Throughput | Standard / Global / Data Zone、PTU、Batch |
+
+## 一句收尾
+
+"I don't stop at the status code. Each of these errors tells you exactly what's wrong if you read the full message: the token audience, the missing data action, or which rate limit hit zero."
+
+"我不会只看状态码。这些报错只要读完整，都会直接告诉你问题在哪：token 的 audience、缺的 data action，或者是哪个限额归零了。"
