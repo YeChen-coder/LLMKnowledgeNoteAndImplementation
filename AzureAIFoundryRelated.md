@@ -1,0 +1,149 @@
+# Azure AI Foundry Related（第 1 段：Prompt agent + Responses API）
+
+> 学习时的疑问和解答。对照 AWS（Bedrock / AgentCore）理解。
+> 官方文档：Foundry quickstart（Set up resources / Get started with SDK），2026-11 核对。
+
+## 0. 我做了什么（流程）
+
+| 步骤 | 做什么 |
+|---|---|
+| 1 | ai.azure.com 打开 **New Foundry** 开关 |
+| 2 | 建 project（同时生成 resource group） |
+| 3 | Build → Models → Deploy → Deploy a base model → gpt-5-mini → Default settings（Global Standard） |
+| 4 | 预算（Budgets）：只发邮件提醒，不会自动停止花钱；这次跳过 |
+| 5 | Build → Agents → Create agent，名字 clair，instructions 一句话 |
+| 6 | 聊两句再追问，确认记得上文 |
+| 7 | Python：`azure-ai-projects` 2.x + `DefaultAzureCredential`，先调模型，再调 agent |
+
+## 1. Azure Portal 和 Foundry 门户是一回事吗？
+
+不是。
+
+| | Azure Portal（portal.azure.com） | Foundry 门户（ai.azure.com） |
+|---|---|---|
+| 用途 | 管理资源（账单、权限、删除资源组） | 建项目、部署模型、建 agent |
+| AWS 对照 | AWS Console | Bedrock 自己的 Studio |
+
+New Foundry 开关在 ai.azure.com 顶部。
+
+## 2. 页面上的 API key / endpoint 要复制吗？
+
+| 项目 | 说明 |
+|---|---|
+| Project endpoint | 写代码时用，放环境变量，**不要写进公开仓库** |
+| Azure OpenAI endpoint | 旧式入口，不用 |
+| API key | 不用，用 `DefaultAzureCredential` |
+
+## 3. 能选"无审查 / NSFW"的模型吗？
+
+不能指望。Content filter（内容过滤器）是 **平台层**的，不是模型层的：
+- Grok 等模型在 Foundry 上同样被过滤，和在 xAI 官方 API 上不同
+- 调低过滤要申请，仍受 Acceptable Use Policy（可接受使用政策）约束
+- 违规可能导致限流或停用订阅
+
+这次学的是 Agent Service 的 API 和流程，换模型只是改一个参数。学习阶段用 **gpt-5-mini**：便宜，官方文档就用它。
+
+## 4. 模型名后面的 Codex 后缀是什么？
+
+Codex 后缀 = 专门为写代码调过的版本。
+
+| | 无后缀 | 带 Codex |
+|---|---|---|
+| 定位 | 通用：聊天、问答、写作 | 编程：写、改、审代码，agent 式编码 |
+| 常见限制 | 基本都能用 | 通常只支持 Responses API，看模型卡 |
+
+我们做通用 agent，不选 Codex。
+
+## 5. Model playground 里的 Knowledge / Memory 为什么不能改？
+
+| 你在 | 能做什么 |
+|---|---|
+| Model playground（模型试玩场） | 只和模型直接聊，改 Instructions；Tools / Knowledge / Memory 只是预览 |
+| Agent 页面 | 才能真正添加 Tools / Knowledge / Memory |
+
+所以按钮写 **Save as agent**：先存成 agent，才能挂东西。
+AWS 对照：先调模型，再建 AgentCore agent 才能挂 tools 和 knowledge base。
+Knowledge 属于第 2 段 RAG（retrieval-augmented generation，检索增强生成）。
+
+## 6. 为什么 agent 的 Version 是 2？
+
+每次保存（改 instructions 或模型）都生成一个新 Version。对应代码里的 `create_version`。
+
+## 7. 三种 agent：Prompt vs Hosted
+
+| | Prompt agent（本次做的） | Hosted agent（托管 agent） |
+|---|---|---|
+| 是什么 | 模型 + instructions（可选 tools），没有自己写的服务代码 | 自己写 agent 代码，打包成容器，Foundry 托管运行 |
+| 谁跑逻辑 | Foundry 平台 | 自己的代码 |
+| 门户 Type 列 | Prompt | Hosted |
+| AWS 对照 | Bedrock Agents（配置式） | AgentCore Runtime（部署自己的代码） |
+
+第 2 部分的代码**不是**创建 agent，只是用 Python 调门户里已建好的 clair。
+`azd`（Azure Developer CLI，Azure 开发者命令行）主要用于 hosted agent 一键部署，本次不用；本次只用 `az login` 和 Python SDK。
+
+## 8. 脚本 1 和脚本 2
+
+脚本 1（`01_call_model.py`）：
+
+```python
+project = AIProjectClient(endpoint=endpoint, credential=DefaultAzureCredential())
+openai = project.get_openai_client()
+response = openai.responses.create(model="gpt-5-mini", input="...")
+```
+
+脚本 2（`02_call_agent.py`）：
+
+```python
+openai = project.get_openai_client(agent_name="clair")
+conversation = openai.conversations.create()
+r1 = openai.responses.create(conversation=conversation.id, input="...")
+r2 = openai.responses.create(conversation=conversation.id, input="...")
+openai.conversations.delete(conversation.id)
+```
+
+| | 脚本 1 | 脚本 2 |
+|---|---|---|
+| 接口 | Responses API | **也是 Responses API** |
+| 指向 | 模型 `model="gpt-5-mini"` | agent `agent_name="clair"` |
+| 记忆 | 无 | 有（加了 conversation） |
+| 门户对应 | Models 页面试玩 | Agents 页面里的 clair |
+
+脚本 1 不是 agent，只是直接调模型。
+
+类比：脚本 1 是直接给厨师（模型）下单；脚本 2 是通过餐厅（agent）下单，餐厅有固定规矩（instructions）和点单记录（conversation）。
+
+**版本注意**：azure-ai-projects 2.x 用 `create_version` / `conversations` / `responses`；不要用旧版 `create_agent` / `threads` / `runs`（1.x，已是 classic）。
+
+## 9. 为什么调用成功后，模型反问 "Which Microsoft Foundry do you mean?"
+
+gpt-5-mini 的训练数据里没有这个新产品名，它不知道，所以反问。不是错误，反而证明：认证、endpoint、部署名、Responses API 全部正常。
+
+## 10. 为什么 clair 记得 Mochi？conversation id 在哪来的？
+
+- 脚本里 `conversations.create()` **当场新建**一个 conversation，id 自动返回，不需要去门户找
+- 历史存在 Foundry 服务端的 conversation 里
+- 每次请求带上同一个 id，平台把历史一起送给模型
+- 模型本身不记东西，只看当次的 context window
+- 门户里聊的 conversation 和脚本里的 conversation **互不相通**
+- 证据：脚本 1 没有 conversation id，就没有记忆；换新 conversation，clair 就不认识 Mochi
+
+## 11. `DefaultAzureCredential` 做了什么？为什么不用 API key？
+
+| 点 | 说明 |
+|---|---|
+| 做什么 | 按顺序找可用身份（环境变量、managed identity、`az login` 等），换成 Entra ID（Azure 身份系统）的短期 token |
+| 本次 | 找到了 `az login` 的登录状态 |
+| 授权为什么通过 | 账号在项目上有角色（RBAC，基于角色的访问控制，如 Foundry User） |
+| 为什么不推荐 API key | key 是长期静态密钥，泄露就能被滥用，也不知道是谁在用；token 短期有效、按人授权、有审计记录 |
+| API key 能用吗 | 能，只是不推荐 |
+
+AWS 对照：Entra ID + RBAC 像 IAM role + 临时凭证（STS）；API key 像长期 access key。
+
+## 面试一句话
+
+"Responses API 是统一调用接口：直接调模型没有上下文和 instructions；调 agent 加 conversation，才有 instructions 和多轮记忆。认证用 `DefaultAzureCredential` 走 Entra ID，不用 API key。"
+
+## 收尾
+
+- 学完要**删除资源组**（Azure Portal → 资源组 → Delete，或 `az group delete --name <资源组名> --yes --no-wait`），否则可能继续产生费用。
+- endpoint 放环境变量，不写进文件、不放公开仓库。
