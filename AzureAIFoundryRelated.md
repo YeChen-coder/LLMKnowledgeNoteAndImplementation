@@ -147,3 +147,39 @@ AWS 对照：Entra ID + RBAC 像 IAM role + 临时凭证（STS）；API key 像�
 
 - 学完要**删除资源组**（Azure Portal → 资源组 → Delete，或 `az group delete --name <资源组名> --yes --no-wait`），否则可能继续产生费用。
 - endpoint 放环境变量，不写进文件、不放公开仓库。
+
+## 12. Entra ID vs RBAC（总是搞混）
+
+类比：进公司大楼。
+
+| | 对应 | 回答的问题 |
+|---|---|---|
+| **Entra ID**（微软身份服务，旧名 Azure AD） | 门口保安查工牌 | 你是谁？（authentication，认证） |
+| **RBAC**（Role-Based Access Control，基于角色的访问控制） | 工牌上写的权限 | 你能做什么？（authorization，授权） |
+
+顺序：先 Entra ID 确认你是你，发 token（临时名牌）；再拿着 token 去 RBAC 查你在这个资源上有什么角色。
+
+本次例子：`az login` 是 Entra ID 这一步；脚本调 Foundry 时，Azure 用 RBAC 查你在项目上有没有角色。
+
+| 报错 | 哪一步坏了 |
+|---|---|
+| 401 Unauthorized | Entra ID：没登录或 token 过期，不认识你 |
+| 403 Forbidden | RBAC：认识你，但没权限 |
+
+口诀：401 不认识你，403 认识但不让你进。
+
+核心概念：
+
+| 概念 | 一句话 | AWS 对照 |
+|---|---|---|
+| Tenant（租户） | 一个组织的 Entra 目录 | 身份目录 |
+| User / Group | 人 / 一批人 | IAM user / group |
+| Service principal（服务主体） | 给应用或脚本用的身份 | IAM role（应用用） |
+| Managed identity（托管身份） | Azure 资源自带的身份，不用管密码 | EC2/Lambda 的 instance role |
+| Token（令牌） | 短期凭证，约 1 小时 | STS 临时凭证 |
+
+容易混淆：
+- Entra 角色（管目录：用户、租户，如 Global Administrator） vs Azure RBAC 角色（管资源，如 Owner、Contributor、Foundry User）
+- Tenant 管身份；Subscription 管账单和资源，一个租户下可有多个订阅
+
+面试一句话："Entra ID 负责认证，Azure RBAC 负责授权。应用在 Azure 上优先用 managed identity，本地开发用 `az login`，都通过 `DefaultAzureCredential` 统一获取 token。"
