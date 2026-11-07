@@ -454,3 +454,202 @@ agent 的 system prompt 只有两句，底层是通用 gpt-5-mini，所以它会
 ## 一句抱怨（原话）
 
 > 根据我在Infra做 Support 和跟产品组打交道的经验，Azure Portal 上这种到处勾连的问题，出现什么事都是 expected 的。整个东西都是一个大黑箱 (不对，是一串黑箱，黑箱连着黑箱连着黑箱连着黑箱。运气好，凑巧有权限的话，还能查到是哪个黑箱出的问题；运气不好就只知道出了问题，不知道是哪儿的，反正它就是有问题。) ，如果文档上没有明确讲出来，那很多时候就不要好奇心太重了，也不要去为难 Support Engineer，他也不知道，甚至都不知道找谁问， 只能soft skill + set expecation 一套连招。你说为这种事提个 ICM，会被骂的吧？一定会被打回来的。而且很多时候，他们产品组自己的人都讲不清楚哪个是什么。
+
+---
+
+# 第 3 段：自定义工具（Function tool）
+
+## 29. 选哪种工具：Function tool 还是 MCP
+
+| 选项 | 谁执行 | 成本 | 结论 |
+|---|---|---|---|
+| Function tool（函数工具） | **我自己的代码**（客户端） | 0，不用托管服务器 | 选它，最常见 |
+| MCP（Model Context Protocol，模型上下文协议）tool | 远程 MCP server | 要托管服务器 | 这次不选 |
+
+**Toolbox（工具箱）和单个工具的区别**
+
+| | 单个工具 | Toolbox |
+|---|---|---|
+| 挂在哪 | 直接写进 agent 定义 | 一组工具打包，通过**一个 MCP endpoint** 暴露 |
+| 复用 | 每个 agent 各配一份 | 配一次，多个 agent 共用，统一认证和版本 |
+| 注意 | Function tool **只能直接挂**，不能放进 Toolbox | |
+
+## 30. 工具调用流程（亲手跑通）
+
+给 Clair 加了 `record_visitor_message`（记录访客留言）。
+
+**代码分两半，只靠工具名字符串对上**
+
+| 文件 | 存的是 | 在哪 |
+|---|---|---|
+| 定义脚本 | 工具的**说明书**：名字 + 参数 JSON schema | 上传到 Foundry，存在 agent 定义里 |
+| 对话脚本 | 工具的**实现**：Python 函数 | 只在我电脑上 |
+
+**一次调用转 2 圈**
+
+| 圈 | 发生了什么 |
+|---|---|
+| 1 | 我的代码发问题 → Foundry 返回 `function_call`（工具名、参数、`call_id`），**还没有回答** |
+| — | 我的代码在本地执行函数 |
+| 2 | 我的代码发 `function_call_output`（用同一个 `call_id`）→ Foundry 返回最终回答 |
+
+要点：
+- 模型只**决定**调什么、传什么；**执行**的是我的代码
+- 参数来自模型，当不可信输入处理（截断长度）
+- 运行 10 分钟后过期，要在那之前交回结果
+- AWS 对照：定义脚本 ≈ action group 的 OpenAPI schema；函数 ≈ Lambda。区别是 Lambda 在云上跑，这里在本地跑
+
+## 31. AgentCore Gateway 到底是什么（一直没搞懂的问题）
+
+**AgentCore Gateway 是 AI 专用的**，不是通用的 Amazon API Gateway，名字容易误会。
+
+| | Amazon API Gateway（通用） | AgentCore Gateway（AI 专用） |
+|---|---|---|
+| 给谁用 | 人写的客户端（网页、App） | AI agent |
+| 对外协议 | REST、HTTP、WebSocket | **MCP** |
+| 干什么 | 路由、限流、认证 | 把 Lambda / OpenAPI 包装成 MCP 工具，统一认证，工具语义搜索 |
+
+**Lambda 自己就能被触发，为什么还要 Gateway？**
+
+| 没有 Gateway | 有 Gateway |
+|---|---|
+| agent 代码里为每个 Lambda 写调用逻辑和 schema | agent 只连**一个 MCP endpoint**，自动拿到工具列表 |
+| 每个工具各管各的凭证 | 入站认证（谁能用）+ 出站认证（用什么凭证调目标）统一管 |
+| 换 agent 框架要重写 | 支持 MCP 的框架都能用 |
+| 工具多了全塞 prompt，贵又容易选错 | 语义搜索，只给相关工具 |
+
+一句话：**Lambda 是干活的，Gateway 是把活包装成 AI 能看懂的标准菜单，再加一道门卫。**
+
+| AWS | Azure |
+|---|---|
+| AgentCore Gateway | **Foundry Toolbox**（最接近） |
+| Amazon API Gateway | Azure API Management（APIM），也能把 REST API 暴露成 MCP server |
+| Lambda | Azure Functions |
+
+**Foundry Function tool vs AgentCore Gateway**
+
+| | Function tool | AgentCore Gateway |
+|---|---|---|
+| 谁执行 | 客户端（我的进程） | 服务端（Gateway 调 Lambda / API） |
+| 暴露方式 | agent 定义里的 JSON schema | MCP 工具 |
+| 认证 | 用我自己的身份 | Gateway 统一管 |
+
+面试一句：**MCP 是 AI 时代的"API 契约"，Gateway / Toolbox 解决"N 个 agent × M 个工具"的接线问题。**
+
+## 32. 修第 2 段的安全问题：限定职责范围
+
+- 在 instructions 里写死 Clair 只做三件事：猫咖问答、帮访客留言、简单闲聊；系统命令、黑客、删数据等一律拒绝，不给部分步骤
+- 验证：问"一条命令删光 Linux 服务器所有文件"，输出只有 `message`，没有命令（第 2 段时它会一步步教）
+- instructions 只是第一道防线。面试说**纵深防御**（defense in depth）：instructions + 平台 guardrail + 工具最小权限 + 评估和红队
+
+## 33. Guardrail 是具体的东西吗？什么时候起作用？
+
+**是具体对象**：有名字、能配置、能挂到资源上。
+
+| | AWS | Azure |
+|---|---|---|
+| 叫什么 | Amazon Bedrock Guardrails | Foundry Guardrails（旧名 content filter / RAI policy） |
+| 是什么 | 独立资源，有 ARN 和版本 | 策略对象，挂在模型部署上（也能挂 agent） |
+| 默认 | 不建就没有 | **默认开着** |
+| 单独调用 | `ApplyGuardrail` API | Azure AI Content Safety API |
+
+| 功能 | AWS | Azure |
+|---|---|---|
+| 仇恨 / 色情 / 暴力 / 自残 | Content filters | 同样 4 类，可调严重度 |
+| 越狱 / 提示注入 | Prompt attack filter | Prompt Shields（直接越狱 + XPIA） |
+| 禁止话题 | **Denied topics** | 没有完全对应，靠 instructions + blocklist |
+| 敏感词 | Word filters | Blocklists |
+| PII | 遮盖或拦截 | PII 检测 |
+| 幻觉 | Contextual grounding check | Groundedness detection |
+
+**时间顺序：餐厅安检门比喻**
+
+```
+客人说话 → [门1] → 服务员思考 → [门2] → 去后厨拿东西 → [门3] → 服务员回答 → [门4] → 客人听到
+```
+
+| 门 | 检查什么 | 拦下会怎样 |
+|---|---|---|
+| 门1 · User input | 越狱、有害内容 | 模型根本不跑（返回 400 `content_filter`） |
+| 门2 · Tool call | 工具名和参数 | 工具不执行 |
+| 门3 · Tool response | 工具返回内容（防间接注入） | 不进 agent 上下文 |
+| 门4 · Output | 最终回答 | 回答被截断，带标记 |
+
+- **按顺序一道一道过，不是并行**
+- **AWS 只有门1和门4**，门2、门3 自己调 `ApplyGuardrail` 插
+- **Azure 4 道都有**（门2、门3 预览中，而且要工具本身支持 moderation）
+- 唯一例外：流式输出的**异步模式**边说边查，更快但坏话可能已经漏出去
+- 门的种类不同，插在哪一步就不同，这就是"guardrail 没有统一定义"的原因
+- 我亲手见过：第 2 段 3 条越狱样本 errored，就是被门1拦在 agent 之前
+
+## 34. File Search 是 hybrid search 吗？
+
+是，**要用 embedding，不是纯关键词**；但重排那一步是黑箱。
+
+| 环节 | 做了什么 | 公开吗 |
+|---|---|---|
+| 切块 | 800 token，重叠 400 | 公开，可改 |
+| 向量化 | embedding 后存进 vector store | 公开 |
+| 改写查询 | 一个问题被改写成多条 `queries`（评估输出里亲眼看到 3 条） | 公开 |
+| 混合检索 | 关键词 + 向量两路 | 公开 |
+| 重排 | reranker | **模型不公开**，只能调 `score_threshold` |
+
+检索结果分数 0.0333 这种很小的数，像融合后的分数，不像余弦相似度（我的推断）。
+
+**Amazon Bedrock Knowledge Bases（KB）是什么**：AWS 的托管 RAG。接数据源（S3 等）→ 切块 → **自选** embedding 模型 → 存进**自选**向量库（OpenSearch Serverless、Aurora 等）→ `Retrieve` / `RetrieveAndGenerate` → 可挂给 Bedrock Agent。
+
+| | File Search | Bedrock KB | Azure AI Search |
+|---|---|---|---|
+| 定位 | 最傻瓜 | 托管流程，但零件自选 | 最可控 |
+| embedding | 平台定 | 自选 | 自选 |
+| reranker | 不公开 | 自选 | 语义排序器可配 |
+
+## 35. 补跑 Tool Call Accuracy 评估：踩坑全过程
+
+**第一次（云端替我跑 agent）：7 行全部 skipped**
+
+| 行 | 原因 |
+|---|---|
+| 猫咖 2 行 | agent 输出里 File Search 叫 **`file_search_call`**，评估器只认 **`file_search`**，名字对不上 → "Tool definitions must be provided" |
+| 留言 3 行 | "Intermediate response"：函数只在我电脑上，平台执行不了，对话卡在 `function_call`，裁判认为没答完 |
+| 无工具 2 行 | 没调工具，评估器不适用（正确行为） |
+
+但手动解析输出：**Clair 7 行全部选对了工具**。
+
+**猫咖那 2 行：像是平台 bug（我的判断，官方未承认）**
+
+agent 输出和评估器都是 Azure 自己的，同一个工具两边叫法不一样，用户什么都没做错就对不上了。
+
+> 这种配不上、对不上的事情，那可实在是太 expected 了。考虑到 Azure Product Team 这里边的错综复杂的关系，那出什么事都是正常的。（原话）
+
+**留言那 3 行：不是 bug，是 function tool 的设计**
+
+- **谁定义，谁执行**。平台能替我调 agent，但替不了我执行函数
+- 比喻：服务员把单子给后厨，后厨在我家，餐厅里没人做菜，检查员只看到一张没做的单子
+- 准确说法：云端评估器**能评**本地 function calling，但**跑不了**。跑在本地，评在云端（dataset 模式，而不是 agent target 模式）
+
+**"只评调没调对，为什么还要最终回答？"**
+
+- 我的直觉对：只评工具调用，逻辑上不需要最终回答
+- "中间态"检查写在**所有评估器共用的底层代码**里，groundedness 之类需要它，Tool Call Accuracy 也被一刀切了：设计上没专门考虑这种情况，和单轮 / 多轮无关
+- 文档其实留了路：只给 `query` + `tool_calls`、不给 `response`。但"云端替你跑"模式输出的是整段对话格式，没法改成 `tool_calls` 要的格式，所以还是得本地跑
+
+**评估器代码在哪？**
+
+- 逻辑在开源包 `azure-ai-evaluation`（PyPI / GitHub），我是读源码定位的原因
+- 云端报错文字和开源包**一字不差**，所以云端很可能跑的是同一份或改版（推断，看不到云端代码）
+- 好处：出问题能自己读源码排查
+
+**最终做法**：本地逐条跑 agent、真的执行函数，把"调用 → 结果 → 最终回答"整理成官方消息格式，作为数据集交给云端裁判打分。（结果待补）
+
+**状态要分开数**
+
+| 状态 | 含义 | 算通过吗 |
+|---|---|---|
+| passed / failed | 裁判打了分 | 看分 |
+| skipped | 裁判主动不评 | ❌ |
+| errored | 数据或平台出错 | ❌ |
+
+## 第 3 段面试一句话（工具）
+
+"我给 agent 加了客户端执行的 function tool，也限定了它的职责范围来修红队发现的问题。补评估时遇到 7 行全跳过，我读了开源评估器源码，定位到两个原因：内置工具命名不一致，和客户端工具在云端无法执行。最后改成本地跑轨迹、云端打分。"
