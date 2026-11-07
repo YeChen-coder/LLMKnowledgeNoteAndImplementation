@@ -783,3 +783,43 @@ SDK 自带的重试用的**就是**指数退避 + 抖动，也会读 retry-after
 ## 第 3 段面试一句话（429）
 
 "我建了一个 1K TPM 的测试部署故意打出 429。看响应头发现 token 还剩一半，是请求数先归零，所以排查 429 第一步是看哪个 remaining 归零了。我写了带退避和抖动的重试，优先遵循 retry-after-ms。但生产环境我会用 SDK 自带重试，经常限流就从负载均衡和容量上解决，因为重试只是止血。"
+
+## 40. "我是 Owner，为什么还 403？"：Control plane vs Data plane
+
+（这次只学概念，跳过了动手实验。）
+
+Azure 把权限分成两种：
+
+| | Control plane（管理面） | Data plane（数据面） |
+|---|---|---|
+| 管什么 | 建、删、改资源本身（manage the resource） | **用**资源：调模型、跑 agent（use the resource） |
+| 例子 | 建部署、删资源组 | `responses.create` |
+| Owner 有吗 | ✅ 有 | ❌ **没有** |
+| 谁给 | Owner / Contributor | Foundry User 这类带 DataActions 的角色 |
+
+英文：Owner grants control-plane actions, not data-plane DataActions.
+
+**核心原则：职责分离（separation of duties）**
+
+管基础设施的人，不应该自动看得到业务数据（infrastructure admins shouldn't automatically get access to business data）。
+
+| 角色 | 该做的事 | 不该做的事 |
+|---|---|---|
+| IT / 平台管理员（Owner） | 建资源、管账单、管权限 | 读客户聊天记录、调用模型看数据 |
+| 应用 / 数据团队（Foundry User） | 调模型、跑 agent | 删资源组 |
+
+**这不是为了"防住" Owner**：Owner 随时能给自己加数据角色。真正的目的是：
+- 访问数据变成一个明确的决定（data access becomes an explicit decision），不是"顺便就有"
+- 留下审计记录（leaves an audit trail）：Activity Log 里会记下谁、什么时候给自己加了数据权限
+- 合规审计时能回答"谁能访问数据"
+
+同样的设计在 Azure 里到处都是：Key Vault 的 Owner 默认读不了 secret；Storage 的 Owner 默认读不了 blob，要另加 Storage Blob Data Reader。
+
+| | Azure | AWS |
+|---|---|---|
+| 默认 | 管理和数据**分开**，要显式授权（separated by default） | AdministratorAccess 直接能 `s3:GetObject`（admins can do everything by default） |
+| 想隔离数据 | 默认就是隔离的 | 自己写 KMS key policy 或 bucket policy 去 deny |
+
+排查顺序：403 → 先确认是数据面操作 → 查调用者在**这个资源的范围上**有没有数据角色（check for a data-plane role at the right scope）→ 刚加完角色仍 403，等权限生效（role assignment propagation can take up to ~10 minutes）。
+
+面试一句话："Azure separates control-plane and data-plane permissions, so even an Owner needs an explicit data role. It's not a hard barrier, since an Owner can grant it to themselves, but it makes data access a deliberate, audited decision."
