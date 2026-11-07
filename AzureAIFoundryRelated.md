@@ -183,3 +183,61 @@ AWS 对照：Entra ID + RBAC 像 IAM role + 临时凭证（STS）；API key 像�
 - Tenant 管身份；Subscription 管账单和资源，一个租户下可有多个订阅
 
 面试一句话："Entra ID 负责认证，Azure RBAC 负责授权。应用在 Azure 上优先用 managed identity，本地开发用 `az login`，都通过 `DefaultAzureCredential` 统一获取 token。"
+
+---
+
+# 第 2 段：RAG（Retrieval-Augmented Generation，检索增强生成）
+
+## 13. 托管 File Search（文件搜索工具）怎么给 agent 接知识库
+
+| 步骤 | 做了什么 | AWS 对照 |
+|---|---|---|
+| `vector_stores.create` + 上传 | 托管索引：自动解析、切块、向量化、建关键词索引 | Bedrock Knowledge Base（知识库）+ S3 同步 |
+| `agents.create_version` 挂 `FileSearchTool` | 给同名 agent 发新版本 | 更新 AgentCore 的工具配置 |
+| 提问 | 看 `output` 里有没有 `file_search_call` | 看 trace 里有没有 retrieve 调用 |
+
+- 不用建 Azure AI Search：File Search 用微软托管的搜索和存储。
+- 验证方法：同一个问题，接知识库前 agent 反问或编造，接后答对，且输出项多了 `file_search_call`。
+- 注意：接知识库前后问同一个资料里才有的问题，才能证明答案来自检索，不是模型自带知识。
+
+## 14. File Search 的工作流和默认值
+
+查询处理 4 步：改写查询 → 拆成并行搜索 → hybrid search（混合检索，关键词 + 语义）→ rerank（重排序）。
+
+| 设置 | 默认值 |
+|---|---|
+| Chunk size（切块大小） | 800 tokens |
+| Chunk overlap（切块重叠） | 400 tokens |
+| 嵌入模型 | text-embedding-3-large（256 维） |
+| 进上下文的最大块数 | 20 |
+
+| 概念 | 作用 |
+|---|---|
+| Chunking（切块） | 把长文拆成可检索的小段；重叠是为了避免答案正好被切在边界上 |
+| Hybrid search（混合检索） | 关键词抓字面，向量抓语义，两者互补 |
+| Reranking（重排序） | 对候选块重新按相关度排序，只留最相关的 |
+
+## 15. reranker 是黑盒
+
+- 托管 File Search 的 reranker：文档只写 "Reranks results"，**没有公开模型**。
+- 能调的只有 `score_threshold`（0 到 1，越高越严格，返回的块越少）。
+- 想要可控、可解释的重排序：改用 Azure AI Search 的 semantic ranker（语义排序器）。
+- AWS 对照：Bedrock Knowledge Base 可以显式选 reranker 模型，更可控；Foundry File Search 更省事但不透明。
+
+## 16. 费用
+
+| 项目 | 说明 |
+|---|---|
+| File Search 存储 | 前 1 GB 免费，超出约 $0.10/GB/天（Azure 零售价 API 查到的 North Central US 价格） |
+| File Search 调用 | 按次收费，价格页显示占位符，没查到单价 |
+| 学习用小文件 | 在免费存储额度内；结束后仍应删除 vector store |
+
+## 17. 踩坑
+
+- `create_version` 的版本号由服务端自动加 1，只增不减；恢复旧内容也会占新号。
+- 版本号不要写死在文档里，以脚本输出为准。
+- 模型反问"你指哪个 Whisker Club"不是 bug，是没有知识库时的正常表现。
+
+## 第 2 段面试一句话
+
+"我用托管 File Search 给 prompt agent 接知识库：上传文件到 vector store，用 `create_version` 发布挂了工具的新版本，并用输出里的 `file_search_call` 验证真的检索了。它默认切块 800 tokens、重叠 400，做 hybrid search 加 rerank，但 reranker 是黑盒，只能调 `score_threshold`；需要可控排序时，我会换 Azure AI Search，或者像 Bedrock 那样显式选 reranker。"
