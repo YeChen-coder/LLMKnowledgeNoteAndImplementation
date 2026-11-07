@@ -241,3 +241,39 @@ AWS 对照：Entra ID + RBAC 像 IAM role + 临时凭证（STS）；API key 像�
 ## 第 2 段面试一句话
 
 "我用托管 File Search 给 prompt agent 接知识库：上传文件到 vector store，用 `create_version` 发布挂了工具的新版本，并用输出里的 `file_search_call` 验证真的检索了。它默认切块 800 tokens、重叠 400，做 hybrid search 加 rerank，但 reranker 是黑盒，只能调 `score_threshold`；需要可控排序时，我会换 Azure AI Search，或者像 Bedrock 那样显式选 reranker。"
+
+---
+
+# 第 3 段补充：Tracing（追踪）
+
+## 18. 连接 Application Insights 与读懂 trace
+
+| 概念 | 一句话 | AWS 对照 |
+|---|---|---|
+| Trace（追踪） | 一次请求的完整链路 | X-Ray trace |
+| Span（跨度） | 链路里的一步 | X-Ray segment |
+| Server-side tracing（服务端追踪） | 连上 Application Insights 后 Foundry 自动记录，不改代码 | AgentCore 接 CloudWatch / X-Ray |
+
+一次带 File Search 的 agent 调用，trace 里有 3 个 span：
+
+| Span | 耗时（本次实测） | 含义 |
+|---|---|---|
+| `invoke_agent clair:<版本号>` | 约 5.5 到 5.9 秒 | 整个 agent 调用，最外层，包含下面两步和 agent 自己的推理 |
+| `execute_tool file_search.msearch` | 约 0.4 秒 | File Search 检索（混合检索 + 重排序） |
+| `chat gpt-5-mini-<日期>` | 约 0.4 秒 | 一次模型调用 |
+
+- 读法：外层耗时远大于内层之和，说明时间主要花在 agent 编排和推理上，而不是检索。检索很快（约 0.4 秒），所以慢的时候先看外层，不是先怀疑 RAG。
+- 注意：子 span 之和（约 0.8 秒）远小于外层（约 5.5 秒），差值是 reasoning（推理）模型的思考时间和编排开销；这是我的推断，没有逐 span 核对。
+- 排障用法：慢看哪个 span 最长，错看哪个 span 状态失败。
+
+## 19. Tracing 踩坑
+
+- **连接成功不等于数据能写入。** 连接后 Insights 提示需要 Project managed identity（项目托管标识），点 Resolve 后门户给它授予 Monitoring Metrics Publisher 角色，写入才有保障。
+- **门户 Traces 页可能不显示，数据其实已经在。** 我用 `az rest` 直接查 Application Insights 的 `dependencies` 表，确认 trace 已写入；门户页没显示，怀疑是缓存或时间范围过滤，没有最终确认原因。
+- 看 trace 需要 Log Analytics Reader 角色，是读权限，与调用 agent 的权限分开。
+- 门户可查 90 天；数据存在 Application Insights，保留期和计费跟它走（写入按 GB 计费）。
+- trace 会记录用户输入和模型输出：不要放密钥或个人信息，生产环境要考虑采样和访问控制。
+
+## 第 3 段补充面试一句话
+
+"我给 agent 接了 Application Insights，服务端 tracing 不用改代码。一次调用有 invoke_agent、execute_tool file_search、chat 三层 span，我能看出检索只占约 0.4 秒，时间主要在 agent 推理上。我踩过一个坑：连接成功后还要给项目托管标识授 Monitoring Metrics Publisher 角色，否则写不进去；门户没显示时我用 KQL 直接查 Application Insights 确认数据在。"
