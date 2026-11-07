@@ -418,3 +418,39 @@ agent 的 system prompt 只有两句，底层是通用 gpt-5-mini，所以它会
 ## 第 5 段补充面试一句话
 
 "我用 AI Red Teaming Agent 对 Clair 跑了一次最小红队：平台报 ASR 63%，但我逐条读了评估理由，发现标签和理由矛盾，按理由人工复核更接近 12%，所以我不会只报数字。真正的发现是 Clair 没有范围限制，通用模型会给出删库和提权的步骤，平台内容过滤管不到这一层，要在 system prompt 里加。我还发现子类开关没限住攻击范围、费用护栏事前拦不住，所以以后我会先用最小范围加账单核对，而不是相信事后护栏。"
+
+---
+
+# 面试总结（第 2 段：RAG、Tracing、评估、红队）
+
+## 30 秒版
+
+"我用 Foundry 把一个 prompt agent 做完了一条完整链路：用 File Search 接知识库，用 Application Insights 做 tracing，用内置评估器做 25 条测试集评估，用 AI Red Teaming Agent 做红队。我最大的体会是：每个环节都有平台自己的不一致，所以不能只信分数，要读理由，要核对账单。"
+
+## 2 分钟版
+
+| 环节 | 我做了什么 | 踩的坑 / 发现 |
+|---|---|---|
+| RAG | 用托管的 File Search 接知识库，验证输出里有 `file_search_call` | 默认切块 800 tokens、重叠 400，混合检索加重排序。reranker 是黑盒，只能调 `score_threshold` |
+| Tracing | 连 Application Insights，看 `invoke_agent`、`execute_tool`、`chat` 三层 span | 连接成功不等于能写入，还要给项目托管标识授 Monitoring Metrics Publisher；门户不显示时用 KQL 直接查确认 |
+| 评估 | 25 条测试集，跑 Intent Resolution、Task Adherence、Groundedness、Indirect Attack | errored 不等于 passed，3 条越狱样本被平台过滤器拦在 agent 之前；合理拒绝被 Task Adherence 扣分；测试数据本身会污染结果 |
+| 红队 | 对 Clair 跑最小红队，Flip 策略 | 平台报 ASR 63%，但标签和它自己的理由矛盾，人工复核约 12%；子类开关没限住范围；费用护栏事前拦不住 |
+| 真发现 | agent 会给出删库、提权步骤 | 缺范围限制，平台内容过滤不管这一层，要在 system prompt 里加 |
+
+## 和 AWS 的区别
+
+| 点 | AWS（Bedrock AgentCore） | Foundry |
+|---|---|---|
+| 知识库 | Knowledge Base，可显式选 reranker，更可控 | File Search 托管，省事但黑盒 |
+| 评估和红队 | 要自己搭或接第三方 | 平台内置评估器和红队代理，但还在预览，不一致处多 |
+| 追踪 | CloudWatch / X-Ray | Application Insights，服务端自动 |
+| 权限 | IAM role | Entra ID 加 RBAC，401 和 403 的区别要分清 |
+| 版本 | agent runtime version | `create_version` 只增不减 |
+
+## 一句收尾
+
+"我不会只报数字。平台说 63%，我读了每条理由后判断更接近 12%，并把这个矛盾记在公开笔记里。"
+
+## 一句抱怨（原话）
+
+> 根据我在那边做 Support 和跟产品组打交道的经验，挨着 Portal 上这种到处勾连的问题，出现什么事都是 expected 的。整个东西都是一个大黑箱，而且很多时候，他们产品组自己的人都讲不清楚哪个是什么。
